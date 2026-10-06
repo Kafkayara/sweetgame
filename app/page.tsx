@@ -36,23 +36,60 @@ interface Pos {
   column: number
 }
 
-const candyClasses = [
-  'candy-red',
-  'candy-blue',
-  'candy-yellow',
-  'candy-green',
-  'candy-purple',
-  'candy-pink',
+export interface PastelCandyConfig {
+  name: string
+  bg: string
+  border: string
+  glow: string
+  shardColor: string
+}
+
+export const PASTEL_CANDIES: PastelCandyConfig[] = [
+  {
+    name: 'Rose',
+    bg: 'bg-rose-400',
+    border: 'border-b-rose-600',
+    glow: 'shadow-rose-400/40',
+    shardColor: '#fb7185',
+  },
+  {
+    name: 'Emerald',
+    bg: 'bg-emerald-400',
+    border: 'border-b-emerald-600',
+    glow: 'shadow-emerald-400/40',
+    shardColor: '#34d399',
+  },
+  {
+    name: 'Amber',
+    bg: 'bg-amber-400',
+    border: 'border-b-amber-600',
+    glow: 'shadow-amber-400/40',
+    shardColor: '#fbbf24',
+  },
+  {
+    name: 'Sky',
+    bg: 'bg-sky-400',
+    border: 'border-b-sky-600',
+    glow: 'shadow-sky-400/40',
+    shardColor: '#38bdf8',
+  },
+  {
+    name: 'Violet',
+    bg: 'bg-violet-400',
+    border: 'border-b-violet-600',
+    glow: 'shadow-violet-400/40',
+    shardColor: '#a78bfa',
+  },
+  {
+    name: 'Fuchsia',
+    bg: 'bg-fuchsia-400',
+    border: 'border-b-fuchsia-600',
+    glow: 'shadow-fuchsia-400/40',
+    shardColor: '#e879f9',
+  },
 ]
 
-const SHARD_COLORS = [
-  'var(--red)',
-  'var(--blue)',
-  'var(--yellow-candy)',
-  'var(--green)',
-  'var(--purple)',
-  'var(--pink)',
-]
+const SHARD_COLORS = PASTEL_CANDIES.map(c => c.shardColor)
 
 const COMBO_LABELS: Record<number, string> = {
   2: 'Manis!',
@@ -1241,12 +1278,20 @@ export default function SweetGridGame() {
       </header>
 
       {/* ================================================================= */}
-      {/* MODE SELECT                                                       */}
+      {/* MODE SELECT (Kapsul Tab)                                          */}
       {/* ================================================================= */}
-      <div className="mode-select grid grid-cols-2 gap-2 mb-3" role="group" aria-label="Mode permainan">
+      <div
+        className="mode-select flex p-1 bg-slate-900/80 border border-slate-700/60 rounded-full mb-3 shadow-inner"
+        role="group"
+        aria-label="Mode permainan"
+      >
         <button
           id="modeTargetBtn"
-          className={`mode-btn ${gameMode === 'target' ? 'is-active' : ''}`}
+          className={`flex-1 py-1.5 px-3 rounded-full text-xs font-bold transition-all ${
+            gameMode === 'target'
+              ? 'bg-amber-400 text-slate-950 shadow-md font-extrabold'
+              : 'text-slate-400 hover:text-white'
+          }`}
           type="button"
           aria-pressed={gameMode === 'target'}
           onClick={() => changeGameMode('target')}
@@ -1256,7 +1301,11 @@ export default function SweetGridGame() {
 
         <button
           id="modeUnlimitedBtn"
-          className={`mode-btn ${gameMode === 'unlimited' ? 'is-active' : ''}`}
+          className={`flex-1 py-1.5 px-3 rounded-full text-xs font-bold transition-all ${
+            gameMode === 'unlimited'
+              ? 'bg-amber-400 text-slate-950 shadow-md font-extrabold'
+              : 'text-slate-400 hover:text-white'
+          }`}
           type="button"
           aria-pressed={gameMode === 'unlimited'}
           onClick={() => changeGameMode('unlimited')}
@@ -1266,22 +1315,37 @@ export default function SweetGridGame() {
       </div>
 
       {/* ================================================================= */}
-      {/* GAME STATS                                                        */}
+      {/* GAME STATS (Grid 3 Kolom Rapi)                                   */}
       {/* ================================================================= */}
-      <section className="stats grid grid-cols-3 gap-2 mb-3" aria-label="Informasi permainan">
-        <div className="stat stat-score">
-          <span>SKOR</span>
-          <strong id="score">{score}</strong>
+      <section
+        className="stats grid grid-cols-3 gap-2.5 mb-3"
+        aria-label="Informasi permainan"
+      >
+        <div className="stat-card flex flex-col items-center justify-center p-2.5 bg-slate-900/90 border border-slate-800 rounded-xl shadow-md">
+          <span className="text-[10px] font-extrabold tracking-widest text-slate-400 uppercase">
+            SKOR
+          </span>
+          <strong id="score" className="text-xl sm:text-2xl font-black text-amber-400 mt-0.5">
+            {score}
+          </strong>
         </div>
 
-        <div className="stat stat-moves">
-          <span>LANGKAH</span>
-          <strong id="moves">{moves}</strong>
+        <div className="stat-card flex flex-col items-center justify-center p-2.5 bg-slate-900/90 border border-slate-800 rounded-xl shadow-md">
+          <span className="text-[10px] font-extrabold tracking-widest text-slate-400 uppercase">
+            LANGKAH
+          </span>
+          <strong id="moves" className="text-xl sm:text-2xl font-black text-white mt-0.5">
+            {moves}
+          </strong>
         </div>
 
-        <div className="stat stat-target">
-          <span>TARGET</span>
-          <strong id="target">{gameMode === 'unlimited' ? '∞' : TARGET_SCORE}</strong>
+        <div className="stat-card flex flex-col items-center justify-center p-2.5 bg-slate-900/90 border border-slate-800 rounded-xl shadow-md">
+          <span className="text-[10px] font-extrabold tracking-widest text-slate-400 uppercase">
+            TARGET
+          </span>
+          <strong id="target" className="text-xl sm:text-2xl font-black text-white mt-0.5">
+            {gameMode === 'unlimited' ? '∞' : TARGET_SCORE}
+          </strong>
         </div>
       </section>
 
@@ -1291,11 +1355,11 @@ export default function SweetGridGame() {
       <section className="game-area relative flex justify-center" aria-label="Area permainan">
         <div
           ref={boardContainerRef}
-          className="board-container relative w-[min(94vw,420px)] aspect-square p-2 sm:p-2.5 rounded-2xl bg-[#151920] border border-[#363d4a] shadow-2xl flex items-center justify-center overflow-hidden"
+          className="board-container relative w-[min(94vw,420px)] aspect-square p-2.5 sm:p-3 rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl flex items-center justify-center overflow-hidden"
         >
           <div
             id="board"
-            className="board grid grid-cols-8 grid-rows-8 gap-1.5 w-full h-full touch-none select-none"
+            className="board grid grid-cols-8 grid-rows-8 gap-1 sm:gap-1.5 w-full h-full touch-none select-none"
             role="grid"
             aria-label="Papan permainan Sweet Grid"
             aria-rowcount={8}
@@ -1313,19 +1377,32 @@ export default function SweetGridGame() {
                   )
                 }
 
+                const pastel = PASTEL_CANDIES[candyData.type] ?? PASTEL_CANDIES[0]
                 const isSelected = selectedCandy?.row === r && selectedCandy?.column === c
                 const isHint = idleHintCells.some(h => h.row === r && h.column === c)
                 const isPopping = poppingCells.has(`${r},${c}`)
                 const isDragOver = dragOverPos?.row === r && dragOverPos?.column === c
 
-                let specialClass = ''
-                if (candyData.special === 'color-bomb') specialClass = 'candy-color-bomb'
-                else if (candyData.special === 'striped-horizontal') specialClass = 'candy-striped-horizontal'
-                else if (candyData.special === 'striped-vertical') specialClass = 'candy-striped-vertical'
-                else if (candyData.special === 'wrapped') specialClass = 'candy-wrapped'
-
-                const colorClass =
-                  candyData.special === 'color-bomb' ? '' : candyClasses[candyData.type] ?? ''
+                let specialOverlay = null
+                if (candyData.special === 'color-bomb') {
+                  specialOverlay = (
+                    <div className="absolute inset-0 rounded-xl bg-gradient-to-tr from-amber-500 via-rose-500 to-sky-500 animate-pulse flex items-center justify-center">
+                      <div className="w-2.5 h-2.5 rounded-full bg-white shadow-lg animate-ping" />
+                    </div>
+                  )
+                } else if (candyData.special === 'striped-horizontal') {
+                  specialOverlay = (
+                    <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-1 bg-white/70 shadow-sm pointer-events-none" />
+                  )
+                } else if (candyData.special === 'striped-vertical') {
+                  specialOverlay = (
+                    <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-1 bg-white/70 shadow-sm pointer-events-none" />
+                  )
+                } else if (candyData.special === 'wrapped') {
+                  specialOverlay = (
+                    <div className="absolute inset-1 border-2 border-white/80 rounded-lg pointer-events-none" />
+                  )
+                }
 
                 return (
                   <button
@@ -1342,20 +1419,29 @@ export default function SweetGridGame() {
                     onDragEnd={handleDragEnd}
                     onClick={() => handleCandyClick(r, c)}
                     className={[
-                      'candy',
-                      'w-full h-full aspect-square rounded-xl block relative overflow-hidden',
-                      colorClass,
-                      specialClass,
-                      isSelected ? 'selected' : '',
-                      isHint ? 'hint' : '',
+                      'relative w-full h-full cursor-pointer hover:scale-95 transition-transform',
+                      'rounded-xl shadow-sm border-b-4',
+                      pastel.bg,
+                      pastel.border,
+                      isSelected ? 'ring-4 ring-white scale-90 z-20' : '',
+                      isHint ? 'ring-2 ring-amber-300 animate-bounce' : '',
                       isPopping ? 'pop' : '',
-                      isDragOver ? 'brightness-125 scale-105' : '',
+                      isDragOver ? 'brightness-125 scale-105 z-10' : '',
                       candyData.justCreated ? 'special-born' : '',
                     ]
                       .filter(Boolean)
                       .join(' ')}
                     aria-label={`Permen baris ${r + 1}, kolom ${c + 1}`}
-                  />
+                  >
+                    {/* Efek kilauan cahaya (glossy) di bagian atas pion */}
+                    <div className="absolute inset-x-1 top-0.5 h-1/2 rounded-t-lg bg-gradient-to-b from-white/40 to-transparent pointer-events-none" />
+
+                    {/* Titik highlight glossy tambahan di sudut kiri atas */}
+                    <div className="absolute top-1 left-1.5 w-2 h-1 rounded-full bg-white/60 pointer-events-none" />
+
+                    {/* Overlay jika ada permen spesial */}
+                    {specialOverlay}
+                  </button>
                 )
               })
             )}
@@ -1374,7 +1460,7 @@ export default function SweetGridGame() {
       {/* GAME MESSAGE / FEEDBACK                                           */}
       {/* ================================================================= */}
       <div className="game-feedback min-h-[38px] flex items-center justify-center">
-        <p id="message" className="message" role="status" aria-live="polite">
+        <p id="message" className="message text-slate-400 text-xs sm:text-sm text-center font-medium mt-2" role="status" aria-live="polite">
           {message}
         </p>
       </div>
@@ -1419,11 +1505,6 @@ export default function SweetGridGame() {
           </div>
         </section>
       )}
-
-      {/* Hidden live accessibility feedback */}
-      <div id="gameStatus" className="game-status" aria-live="polite" aria-atomic="true">
-        {message}
-      </div>
     </main>
   )
 }

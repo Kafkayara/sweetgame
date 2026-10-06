@@ -1,26 +1,424 @@
 @import "tailwindcss";
 
 :root {
-  --background: #030712; /* gray-950 — always dark */
-  --foreground: #f9fafb;
+  --background: #0d0f14;
+  --background-soft: #12151c;
+
+  --panel: #171b23;
+  --panel-light: #1e232d;
+  --panel-hover: #252b36;
+
+  --border: #2b313d;
+  --border-light: #363d4a;
+
+  --text: #f5f6f2;
+  --muted: #8c94a3;
+  --muted-light: #b4bac5;
+
+  --yellow: #ffd166;
+  --yellow-soft: #ffe29a;
+
+  --red: #ff5c69;
+  --blue: #48bfe3;
+  --yellow-candy: #f7c948;
+  --green: #72d68a;
+  --purple: #9b87f5;
+  --pink: #ff8fab;
+
+  --gap: 7px;
+  --radius-small: 10px;
+  --radius-medium: 14px;
+  --radius-large: 20px;
+  --shadow: 0 24px 70px rgba(0, 0, 0, 0.38);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
+@media (max-width: 400px) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --gap: 5px;
   }
 }
 
-body {
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
   background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: radial-gradient(
+    circle at 50% -10%,
+    #292e3a 0%,
+    #171a22 30%,
+    var(--background) 65%
+  );
+  color: var(--text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+}
+
+/* Candies styling */
+.candy {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  cursor: grab;
+  overflow: hidden;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.28),
+    inset 0 -4px 0 rgba(0, 0, 0, 0.17),
+    0 2px 5px rgba(0, 0, 0, 0.18);
+  transition:
+    transform 0.15s ease,
+    filter 0.15s ease,
+    box-shadow 0.15s ease,
+    opacity 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+.candy:active {
+  cursor: grabbing;
+}
+
+.candy::after {
+  content: "";
+  position: absolute;
+  width: 30%;
+  height: 17%;
+  top: 12%;
+  left: 17%;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.42);
+  transform: rotate(-25deg);
+  pointer-events: none;
+}
+
+.candy::before {
+  content: "";
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  bottom: 7%;
+  height: 10%;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+}
+
+@media (hover: hover) {
+  .candy:hover {
+    transform: translateY(-2px);
+    filter: brightness(1.07);
+    box-shadow:
+      inset 0 2px 0 rgba(255, 255, 255, 0.34),
+      inset 0 -4px 0 rgba(0, 0, 0, 0.17),
+      0 5px 10px rgba(0, 0, 0, 0.2);
+  }
+}
+
+.candy.selected {
+  z-index: 2;
+  transform: scale(0.86);
+  outline: 3px solid rgba(255, 255, 255, 0.96);
+  outline-offset: 2px;
+  box-shadow:
+    0 0 0 5px rgba(255, 255, 255, 0.08),
+    0 8px 16px rgba(0, 0, 0, 0.3);
+}
+
+.candy-red {
+  background: linear-gradient(145deg, #ff737d 0%, var(--red) 55%, #ec4655 100%);
+}
+
+.candy-blue {
+  background: linear-gradient(145deg, #70d8f2 0%, var(--blue) 55%, #35a8cc 100%);
+}
+
+.candy-yellow {
+  background: linear-gradient(145deg, #ffe27c 0%, var(--yellow-candy) 55%, #e7b331 100%);
+}
+
+.candy-green {
+  background: linear-gradient(145deg, #91e9a4 0%, var(--green) 55%, #55bd70 100%);
+}
+
+.candy-purple {
+  background: linear-gradient(145deg, #b8a9ff 0%, var(--purple) 55%, #806be0 100%);
+}
+
+.candy-pink {
+  background: linear-gradient(145deg, #ffb0c4 0%, var(--pink) 55%, #ec7193 100%);
+}
+
+.candy-striped-horizontal::before,
+.candy-striped-vertical::before {
+  inset: 0;
+  height: auto;
+  border-radius: inherit;
+}
+
+.candy-striped-horizontal::before {
+  background: repeating-linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.72) 0 3px,
+    transparent 3px 8px
+  );
+}
+
+.candy-striped-vertical::before {
+  background: repeating-linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.72) 0 3px,
+    transparent 3px 8px
+  );
+}
+
+.candy-wrapped::before {
+  inset: 5px;
+  height: auto;
+  border: 3px solid rgba(255, 255, 255, 0.92);
+  border-radius: 8px;
+  background:
+    linear-gradient(45deg, transparent 44%, rgba(255, 255, 255, 0.4) 44% 56%, transparent 56%),
+    linear-gradient(-45deg, transparent 44%, rgba(255, 255, 255, 0.4) 44% 56%, transparent 56%);
+  box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.12);
+}
+
+.candy.candy-color-bomb {
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 50%, #2a2f3c 0 30%, transparent 31%),
+    conic-gradient(
+      from 0deg,
+      var(--red),
+      var(--yellow-candy),
+      var(--green),
+      var(--blue),
+      var(--purple),
+      var(--pink),
+      var(--red)
+    );
+  animation: bombGlow 1.6s ease-in-out infinite alternate;
+}
+
+.candy-color-bomb::before {
+  inset: 34%;
+  height: auto;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 35% 30%,
+    #ffffff 0 12%,
+    rgba(255, 255, 255, 0.15) 40%,
+    transparent 70%
+  );
+}
+
+@keyframes bombGlow {
+  from { filter: brightness(1); }
+  to { filter: brightness(1.18); }
+}
+
+.candy.hint {
+  z-index: 1;
+  outline: 3px solid var(--yellow);
+  outline-offset: 2px;
+  animation: hintPulse 0.7s ease-in-out infinite alternate;
+}
+
+@keyframes hintPulse {
+  from {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+  to {
+    transform: scale(1.1);
+    filter: brightness(1.25);
+  }
+}
+
+.candy.pop {
+  animation: popCandy 0.2s cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
+}
+
+@keyframes popCandy {
+  0% { transform: scale(1); opacity: 1; }
+  45% { transform: scale(1.13); opacity: 1; }
+  100% { transform: scale(0.1); opacity: 0; }
+}
+
+.candy.special-born {
+  animation: specialBirth 0.45s ease-out;
+}
+
+@keyframes specialBirth {
+  0% { box-shadow: 0 0 20px 8px rgba(255, 255, 255, 0.85); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); }
+}
+
+/* Particles & effects */
+.shard, .spark {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  will-change: transform, opacity;
+}
+
+.shard {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  box-shadow: 0 0 3px rgba(0, 0, 0, 0.25);
+  animation: shardFly 0.5s cubic-bezier(0.15, 0.8, 0.3, 1) forwards;
+}
+
+.spark {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0 6px 1px rgba(255, 255, 255, 0.75);
+  animation: sparkFly 0.45s ease-out forwards;
+}
+
+@keyframes shardFly {
+  0% {
+    transform: translate(-50%, -50%) rotate(0deg) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(calc(-50% + var(--tx)), calc(-50% + var(--ty))) rotate(var(--rot)) scale(0.25);
+    opacity: 0;
+  }
+}
+
+@keyframes sparkFly {
+  0% {
+    transform: translate(-50%, -50%) scale(0.4);
+    opacity: 1;
+  }
+  35% {
+    transform: translate(calc(-50% + var(--tx) * 0.5), calc(-50% + var(--ty) * 0.5)) scale(1.4);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(calc(-50% + var(--tx)), calc(-50% + var(--ty))) scale(0.2);
+    opacity: 0;
+  }
+}
+
+.board-flash {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0) 70%);
+  animation: boardFlashFade 0.5s ease-out forwards;
+  pointer-events: none;
+}
+
+@keyframes boardFlashFade {
+  0% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.shockwave {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  border-radius: 50%;
+  animation: shockwaveExpand 0.5s ease-out forwards;
+  pointer-events: none;
+}
+
+@keyframes shockwaveExpand {
+  0% { width: 10px; height: 10px; opacity: 0.9; }
+  100% { width: 100px; height: 100px; opacity: 0; }
+}
+
+.streak {
+  position: absolute;
+  pointer-events: none;
+}
+
+.streak-horizontal {
+  left: 0;
+  right: 0;
+  height: 10px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.95) 45%, rgba(255, 255, 255, 0.95) 55%, transparent);
+  box-shadow: 0 0 18px 4px rgba(255, 255, 255, 0.7);
+  transform: translateY(-50%) scaleX(0);
+  animation: streakFlashH 0.4s ease-out forwards;
+}
+
+.streak-vertical {
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.95) 45%, rgba(255, 255, 255, 0.95) 55%, transparent);
+  box-shadow: 0 0 18px 4px rgba(255, 255, 255, 0.7);
+  transform: translateX(-50%) scaleY(0);
+  animation: streakFlashV 0.4s ease-out forwards;
+}
+
+@keyframes streakFlashH {
+  0% { transform: translateY(-50%) scaleX(0); opacity: 1; }
+  40% { transform: translateY(-50%) scaleX(1); opacity: 1; }
+  100% { transform: translateY(-50%) scaleX(1); opacity: 0; }
+}
+
+@keyframes streakFlashV {
+  0% { transform: translateX(-50%) scaleY(0); opacity: 1; }
+  40% { transform: translateX(-50%) scaleY(1); opacity: 1; }
+  100% { transform: translateX(-50%) scaleY(1); opacity: 0; }
+}
+
+.score-popup {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--yellow);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  white-space: nowrap;
+  animation: scorePopFloat 0.65s ease-out forwards;
+  pointer-events: none;
+}
+
+@keyframes scorePopFloat {
+  0% { transform: translate(-50%, -50%) scale(0.7); opacity: 0; }
+  20% { transform: translate(-50%, -50%) scale(1.1); opacity: 1; }
+  100% { transform: translate(-50%, -120%) scale(1); opacity: 0; }
+}
+
+.combo-popup {
+  position: absolute;
+  left: 50%;
+  top: 38%;
+  transform: translate(-50%, -50%);
+  font-size: 22px;
+  font-weight: 800;
+  color: #ffffff;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.45), 0 0 16px rgba(255, 209, 102, 0.65);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  animation: comboPopIn 0.7s cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
+  pointer-events: none;
+}
+
+@keyframes comboPopIn {
+  0% { transform: translate(-50%, -50%) scale(0.4) rotate(-4deg); opacity: 0; }
+  25% { transform: translate(-50%, -50%) scale(1.15) rotate(2deg); opacity: 1; }
+  40% { transform: translate(-50%, -50%) scale(1) rotate(0deg); opacity: 1; }
+  100% { transform: translate(-50%, -58%) scale(1) rotate(0deg); opacity: 0; }
 }

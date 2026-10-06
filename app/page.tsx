@@ -1,212 +1,1429 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 
-// ---------------------------------------------------------------------------
-// Konstanta
-// ---------------------------------------------------------------------------
+// ============================================================================
+// KONSTANTA & TIPE DATA
+// ============================================================================
 
-const GRID_SIZE = 8
-const TOTAL_CELLS = GRID_SIZE * GRID_SIZE // 64 elemen
+const BOARD_SIZE = 8
+const CANDY_TYPES = 6
 
-const CANDY_COLORS = [
-  { id: 0, bg: 'bg-red-500',    ring: 'ring-red-300',    label: '🍎' },
-  { id: 1, bg: 'bg-blue-500',   ring: 'ring-blue-300',   label: '🫐' },
-  { id: 2, bg: 'bg-yellow-400', ring: 'ring-yellow-200', label: '🍋' },
-  { id: 3, bg: 'bg-green-500',  ring: 'ring-green-300',  label: '🍀' },
-  { id: 4, bg: 'bg-purple-500', ring: 'ring-purple-300', label: '🍇' },
-  { id: 5, bg: 'bg-orange-400', ring: 'ring-orange-300', label: '🍊' },
+const STARTING_MOVES = 30
+const TARGET_SCORE = 1000
+const SCORE_PER_CANDY = 10
+
+const POP_DELAY = 220
+const FALL_DELAY = 480
+const HINT_DELAY = 5000
+
+export type SpecialType =
+  | 'color-bomb'
+  | 'striped-horizontal'
+  | 'striped-vertical'
+  | 'wrapped'
+  | null
+
+export interface Candy {
+  id: string
+  type: number
+  special: SpecialType
+  justCreated?: boolean
+}
+
+interface Pos {
+  row: number
+  column: number
+}
+
+const candyClasses = [
+  'candy-red',
+  'candy-blue',
+  'candy-yellow',
+  'candy-green',
+  'candy-purple',
+  'candy-pink',
 ]
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+const SHARD_COLORS = [
+  'var(--red)',
+  'var(--blue)',
+  'var(--yellow-candy)',
+  'var(--green)',
+  'var(--purple)',
+  'var(--pink)',
+]
 
-/** Buat array 1D 64 elemen dengan warna candy acak */
-function createGrid(): number[] {
-  return Array.from({ length: TOTAL_CELLS }, () =>
-    Math.floor(Math.random() * CANDY_COLORS.length)
-  )
+const COMBO_LABELS: Record<number, string> = {
+  2: 'Manis!',
+  3: 'Lezat!',
+  4: 'Luar Biasa!',
+}
+const COMBO_LABEL_MAX = 'Fantastis!'
+
+let candyIdCounter = 0
+function getNextId() {
+  return `c_${Date.now()}_${++candyIdCounter}`
 }
 
-/**
- * Validasi apakah dua indeks bertetangga secara langsung
- * (atas/bawah/kiri/kanan — tanpa diagonal, tanpa melompat).
- */
-function isAdjacent(a: number, b: number): boolean {
-  const rowA = Math.floor(a / GRID_SIZE)
-  const rowB = Math.floor(b / GRID_SIZE)
-  const colA = a % GRID_SIZE
-  const colB = b % GRID_SIZE
-
-  const sameRow = rowA === rowB
-  const sameCol = colA === colB
-  const rowDiff = Math.abs(rowA - rowB)
-  const colDiff = Math.abs(colA - colB)
-
-  // Kiri / kanan: baris sama, kolom bersebelahan
-  if (sameRow && colDiff === 1) return true
-  // Atas / bawah: kolom sama, baris bersebelahan
-  if (sameCol && rowDiff === 1) return true
-
-  return false
+function randomCandy(): number {
+  return Math.floor(Math.random() * CANDY_TYPES)
 }
 
-// ---------------------------------------------------------------------------
-// Komponen utama
-// ---------------------------------------------------------------------------
+function createCandy(type = randomCandy(), special: SpecialType = null): Candy {
+  return {
+    id: getNextId(),
+    type,
+    special,
+  }
+}
 
-export default function Home() {
-  // --- State ---
-  /** Array 1D 64 elemen yang merepresentasikan grid 8×8 */
-  const [grid, setGrid] = useState<number[]>(createGrid)
+function cloneBoard(b: (Candy | null)[][]): (Candy | null)[][] {
+  return b.map(row => row.map(cell => (cell ? { ...cell } : null)))
+}
 
-  /** Indeks pion yang sedang di-drag */
-  const squareBeingDragged = useRef<number | null>(null)
+function isAdjacent(first: Pos, second: Pos): boolean {
+  const rowDiff = Math.abs(first.row - second.row)
+  const colDiff = Math.abs(first.column - second.column)
+  return rowDiff + colDiff === 1
+}
 
-  /** Indeks pion target (drop destination) */
-  const squareBeingReplaced = useRef<number | null>(null)
+function sameCandyType(first: Candy | null, second: Candy | null): boolean {
+  if (!first || !second) return false
+  if (first.special === 'color-bomb' || second.special === 'color-bomb') return false
+  return first.type === second.type
+}
 
-  /** Untuk keperluan visual: mana yang sedang di-drag / di-hover */
-  const [draggingIdx, setDraggingIdx]   = useState<number | null>(null)
-  const [dragOverIdx,  setDragOverIdx]  = useState<number | null>(null)
-  const [invalidIdx,   setInvalidIdx]   = useState<number | null>(null)
+function isStriped(candy: Candy | null): boolean {
+  if (!candy) return false
+  return candy.special === 'striped-horizontal' || candy.special === 'striped-vertical'
+}
 
-  // --- Feedback pesan terakhir ---
-  const [lastMsg, setLastMsg] = useState<string>('Drag & drop candy untuk menukar posisi')
+function wait(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
 
-  // --- Handlers ---
+// ============================================================================
+// KOMPONEN UTAMA
+// ============================================================================
 
-  function handleDragStart(index: number) {
-    squareBeingDragged.current = index
-    setDraggingIdx(index)
-    setInvalidIdx(null)
+export default function SweetGridGame() {
+  // Game mode & stats
+  const [gameMode, setGameMode] = useState<'target' | 'unlimited'>('target')
+  const [score, setScore] = useState<number>(0)
+  const [moves, setMoves] = useState<number>(STARTING_MOVES)
+  const [message, setMessage] = useState<string>('Pilih atau drag dua permen yang bersebelahan.')
+  const [gameOver, setGameOver] = useState<boolean>(false)
+  const [gameWon, setGameWon] = useState<boolean>(false)
+
+  // Board state: 8x8 matrix
+  const [board, setBoard] = useState<(Candy | null)[][]>([])
+
+  // Selection & hints
+  const [selectedCandy, setSelectedCandy] = useState<Pos | null>(null)
+  const [idleHintCells, setIdleHintCells] = useState<Pos[]>([])
+
+  // Animation visual states
+  const [poppingCells, setPoppingCells] = useState<Set<string>>(new Set())
+
+  // Refs untuk asynchronous gameplay & lock
+  const boardRef = useRef<(Candy | null)[][]>([])
+  const gameLockedRef = useRef<boolean>(false)
+  const gameOverRef = useRef<boolean>(false)
+  const scoreRef = useRef<number>(0)
+  const movesRef = useRef<number>(STARTING_MOVES)
+  const gameModeRef = useRef<'target' | 'unlimited'>('target')
+
+  // Drag-and-drop state refs
+  const squareBeingDragged = useRef<Pos | null>(null)
+  const squareBeingReplaced = useRef<Pos | null>(null)
+  const [dragOverPos, setDragOverPos] = useState<Pos | null>(null)
+
+  // Timer refs
+  const hintTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const hintClearTimerRef = useRef<NodeJS.Timeout | null>(null)
+
+  // DOM ref untuk particle layer & board container
+  const boardContainerRef = useRef<HTMLDivElement | null>(null)
+  const particleLayerRef = useRef<HTMLDivElement | null>(null)
+
+  // Sinkronisasi refs
+  useEffect(() => {
+    boardRef.current = board
+  }, [board])
+  useEffect(() => {
+    scoreRef.current = score
+  }, [score])
+  useEffect(() => {
+    movesRef.current = moves
+  }, [moves])
+  useEffect(() => {
+    gameOverRef.current = gameOver
+  }, [gameOver])
+  useEffect(() => {
+    gameModeRef.current = gameMode
+  }, [gameMode])
+
+  // ==========================================================================
+  // PARTIKEL & VISUAL FEEDBACK
+  // ==========================================================================
+
+  const spawnParticle = (
+    className: string,
+    x: number,
+    y: number,
+    tx: number,
+    ty: number,
+    extraStyle?: React.CSSProperties,
+    lifespan = 500,
+    rotationDeg?: number
+  ) => {
+    if (!particleLayerRef.current) return
+    const particle = document.createElement('span')
+    particle.className = className
+    particle.style.left = `${x}px`
+    particle.style.top = `${y}px`
+    particle.style.setProperty('--tx', `${tx}px`)
+    particle.style.setProperty('--ty', `${ty}px`)
+    if (rotationDeg !== undefined) {
+      particle.style.setProperty('--rot', `${rotationDeg}deg`)
+    }
+    if (extraStyle) {
+      Object.assign(particle.style, extraStyle)
+    }
+    particleLayerRef.current.appendChild(particle)
+    setTimeout(() => particle.remove(), lifespan)
   }
 
-  function handleDragOver(e: React.DragEvent<HTMLDivElement>, index: number) {
-    e.preventDefault() // wajib agar onDrop bisa terpicu
-    squareBeingReplaced.current = index
+  const spawnPopEffect = (candyData: Candy | null, rect: DOMRect, layerRect: DOMRect) => {
+    if (!particleLayerRef.current) return
+    const centerX = rect.left + rect.width / 2 - layerRect.left
+    const centerY = rect.top + rect.height / 2 - layerRect.top
+
+    const special = candyData?.special ?? null
+    const color =
+      special === 'color-bomb' ? null : SHARD_COLORS[candyData?.type ?? 0] ?? '#ffffff'
+    const isColorBomb = special === 'color-bomb'
+    const shardCount = isColorBomb ? 10 : 5
+    const sparkCount = isColorBomb ? 8 : 4
+    const burstRadius = isColorBomb ? 34 : 22
+
+    for (let i = 0; i < shardCount; i++) {
+      const angle = (Math.PI * 2 * i) / shardCount + Math.random() * 0.6
+      const distance = burstRadius + Math.random() * 14
+      const shardColor = color ?? SHARD_COLORS[i % SHARD_COLORS.length]
+
+      spawnParticle(
+        'shard',
+        centerX,
+        centerY,
+        Math.cos(angle) * distance,
+        Math.sin(angle) * distance,
+        { background: shardColor } as unknown as React.CSSProperties,
+        500,
+        Math.round(Math.random() * 280 - 140)
+      )
+    }
+
+    for (let i = 0; i < sparkCount; i++) {
+      const angle = Math.random() * Math.PI * 2
+      const distance = 16 + Math.random() * 18
+      spawnParticle(
+        'spark',
+        centerX,
+        centerY,
+        Math.cos(angle) * distance,
+        Math.sin(angle) * distance,
+        undefined,
+        450
+      )
+    }
+
+    if (special === 'wrapped') {
+      const ring = document.createElement('span')
+      ring.className = 'shockwave'
+      ring.style.left = `${centerX}px`
+      ring.style.top = `${centerY}px`
+      particleLayerRef.current.appendChild(ring)
+      setTimeout(() => ring.remove(), 500)
+    }
+
+    if (special === 'striped-horizontal' || special === 'striped-vertical') {
+      const streak = document.createElement('span')
+      streak.className =
+        special === 'striped-horizontal'
+          ? 'streak streak-horizontal'
+          : 'streak streak-vertical'
+      if (special === 'striped-horizontal') {
+        streak.style.top = `${centerY}px`
+      } else {
+        streak.style.left = `${centerX}px`
+      }
+      particleLayerRef.current.appendChild(streak)
+      setTimeout(() => streak.remove(), 380)
+    }
   }
 
-  function handleDragEnter(index: number) {
-    setDragOverIdx(index)
+  const spawnBoardFlash = () => {
+    if (!particleLayerRef.current) return
+    const flash = document.createElement('span')
+    flash.className = 'board-flash'
+    particleLayerRef.current.appendChild(flash)
+    setTimeout(() => flash.remove(), 500)
   }
 
-  function handleDragLeave() {
-    setDragOverIdx(null)
+  const showScorePopup = (points: number, cellsSet: Set<string>) => {
+    if (!particleLayerRef.current || points <= 0 || !boardContainerRef.current) return
+    const layerRect = particleLayerRef.current.getBoundingClientRect()
+    let sumX = 0
+    let sumY = 0
+    let count = 0
+
+    cellsSet.forEach(posStr => {
+      const [r, c] = posStr.split(',').map(Number)
+      const el = boardContainerRef.current?.querySelector(`[data-cell="${r}-${c}"]`)
+      if (el) {
+        const rect = el.getBoundingClientRect()
+        sumX += rect.left + rect.width / 2 - layerRect.left
+        sumY += rect.top + rect.height / 2 - layerRect.top
+        count++
+      }
+    })
+
+    if (count === 0) return
+    const popup = document.createElement('span')
+    popup.className = 'score-popup'
+    popup.textContent = `+${points}`
+    popup.style.left = `${sumX / count}px`
+    popup.style.top = `${sumY / count}px`
+    particleLayerRef.current.appendChild(popup)
+    setTimeout(() => popup.remove(), 650)
   }
 
-  function handleDrop(e: React.DragEvent<HTMLDivElement>) {
-    e.preventDefault()
+  const showComboPopup = (combo: number) => {
+    if (!particleLayerRef.current) return
+    const label = COMBO_LABELS[combo] ?? COMBO_LABEL_MAX
+    const popup = document.createElement('span')
+    popup.className = 'combo-popup'
+    popup.textContent = label
+    particleLayerRef.current.appendChild(popup)
+    setTimeout(() => popup.remove(), 700)
+  }
 
-    const from = squareBeingDragged.current
-    const to   = squareBeingReplaced.current
+  // ==========================================================================
+  // MATCH-3 ALGORITHM (Sama persis dengan app.js)
+  // ==========================================================================
 
-    // Reset visual states
-    setDraggingIdx(null)
-    setDragOverIdx(null)
+  const findMatchesOnBoard = (currentBoard: (Candy | null)[][]): Set<string> => {
+    const matches = new Set<string>()
 
-    // Guard: indeks harus valid dan berbeda
-    if (from === null || to === null || from === to) return
+    // Horizontal check
+    for (let row = 0; row < BOARD_SIZE; row++) {
+      let start = 0
+      for (let column = 1; column <= BOARD_SIZE; column++) {
+        const current = column < BOARD_SIZE ? currentBoard[row][column] : null
+        const previous = currentBoard[row][start]
 
-    // Validasi: hanya boleh menukar dengan pion yang benar-benar bertetangga
-    if (!isAdjacent(from, to)) {
-      setInvalidIdx(to)
-      setLastMsg(`❌ Tidak valid! Hanya bisa tukar dengan pion atas/bawah/kiri/kanan.`)
-      setTimeout(() => setInvalidIdx(null), 600)
-      squareBeingDragged.current  = null
-      squareBeingReplaced.current = null
+        if (column < BOARD_SIZE && sameCandyType(current, previous)) {
+          continue
+        }
+
+        const length = column - start
+        if (length >= 3) {
+          for (let pos = start; pos < column; pos++) {
+            matches.add(`${row},${pos}`)
+          }
+        }
+        start = column
+      }
+    }
+
+    // Vertical check
+    for (let column = 0; column < BOARD_SIZE; column++) {
+      let start = 0
+      for (let row = 1; row <= BOARD_SIZE; row++) {
+        const current = row < BOARD_SIZE ? currentBoard[row][column] : null
+        const previous = currentBoard[start][column]
+
+        if (row < BOARD_SIZE && sameCandyType(current, previous)) {
+          continue
+        }
+
+        const length = row - start
+        if (length >= 3) {
+          for (let pos = start; pos < row; pos++) {
+            matches.add(`${pos},${column}`)
+          }
+        }
+        start = row
+      }
+    }
+
+    return matches
+  }
+
+  const getHorizontalRun = (row: number, column: number, b: (Candy | null)[][]): string[] => {
+    const candy = b[row][column]
+    if (!candy || candy.special === 'color-bomb') return []
+    let start = column
+    while (start > 0 && sameCandyType(b[row][start - 1], candy)) {
+      start--
+    }
+    let end = column
+    while (end + 1 < BOARD_SIZE && sameCandyType(b[row][end + 1], candy)) {
+      end++
+    }
+    const res: string[] = []
+    for (let i = start; i <= end; i++) {
+      res.push(`${row},${i}`)
+    }
+    return res
+  }
+
+  const getVerticalRun = (row: number, column: number, b: (Candy | null)[][]): string[] => {
+    const candy = b[row][column]
+    if (!candy || candy.special === 'color-bomb') return []
+    let start = row
+    while (start > 0 && sameCandyType(b[start - 1][column], candy)) {
+      start--
+    }
+    let end = row
+    while (end + 1 < BOARD_SIZE && sameCandyType(b[end + 1][column], candy)) {
+      end++
+    }
+    const res: string[] = []
+    for (let i = start; i <= end; i++) {
+      res.push(`${i},${column}`)
+    }
+    return res
+  }
+
+  const longestConsecutiveRun = (numbers: number[]): number[] => {
+    const sorted = [...numbers].sort((a, b) => a - b)
+    let best: number[] = []
+    let current: number[] = []
+
+    for (const num of sorted) {
+      const prev = current[current.length - 1]
+      if (current.length === 0 || num === prev + 1) {
+        current.push(num)
+      } else {
+        if (current.length > best.length) best = current
+        current = [num]
+      }
+    }
+    if (current.length > best.length) best = current
+    return best
+  }
+
+  const findMatchGroups = (b: (Candy | null)[][]) => {
+    const groups: {
+      cells: Set<string>
+      horizontal: string[]
+      vertical: string[]
+      type: number
+    }[] = []
+    const visited = new Set<string>()
+
+    for (let row = 0; row < BOARD_SIZE; row++) {
+      for (let column = 0; column < BOARD_SIZE; column++) {
+        const key = `${row},${column}`
+        if (visited.has(key)) continue
+
+        const candy = b[row][column]
+        if (!candy || candy.special === 'color-bomb') continue
+
+        if (
+          getHorizontalRun(row, column, b).length < 3 &&
+          getVerticalRun(row, column, b).length < 3
+        ) {
+          continue
+        }
+
+        const componentCells = new Set<string>()
+        const stack = [key]
+
+        while (stack.length > 0) {
+          const currentKey = stack.pop()!
+          if (componentCells.has(currentKey)) continue
+          const [r, c] = currentKey.split(',').map(Number)
+          const curCandy = b[r]?.[c]
+          if (!curCandy || !sameCandyType(curCandy, candy)) continue
+
+          const isPartOfRun =
+            getHorizontalRun(r, c, b).length >= 3 || getVerticalRun(r, c, b).length >= 3
+          if (!isPartOfRun) continue
+
+          componentCells.add(currentKey)
+          stack.push(`${r - 1},${c}`, `${r + 1},${c}`, `${r},${c - 1}`, `${r},${c + 1}`)
+        }
+
+        for (const cellKey of componentCells) {
+          visited.add(cellKey)
+        }
+
+        const columnsByRow = new Map<number, number[]>()
+        const rowsByColumn = new Map<number, number[]>()
+
+        for (const cellKey of componentCells) {
+          const [r, c] = cellKey.split(',').map(Number)
+          if (!columnsByRow.has(r)) columnsByRow.set(r, [])
+          columnsByRow.get(r)!.push(c)
+          if (!rowsByColumn.has(c)) rowsByColumn.set(c, [])
+          rowsByColumn.get(c)!.push(r)
+        }
+
+        let bestHorizontal: string[] = []
+        for (const [r, columns] of columnsByRow) {
+          const run = longestConsecutiveRun(columns)
+          if (run.length > bestHorizontal.length) {
+            bestHorizontal = run.map(c => `${r},${c}`)
+          }
+        }
+
+        let bestVertical: string[] = []
+        for (const [c, rows] of rowsByColumn) {
+          const run = longestConsecutiveRun(rows)
+          if (run.length > bestVertical.length) {
+            bestVertical = run.map(r => `${r},${c}`)
+          }
+        }
+
+        groups.push({
+          cells: componentCells,
+          horizontal: bestHorizontal,
+          vertical: bestVertical,
+          type: candy.type,
+        })
+      }
+    }
+    return groups
+  }
+
+  const getSpecialAffectedCells = (
+    row: number,
+    column: number,
+    candy: { special: SpecialType }
+  ): string[] => {
+    const cells: string[] = []
+    if (candy.special === 'striped-horizontal') {
+      for (let c = 0; c < BOARD_SIZE; c++) cells.push(`${row},${c}`)
+    }
+    if (candy.special === 'striped-vertical') {
+      for (let r = 0; r < BOARD_SIZE; r++) cells.push(`${r},${column}`)
+    }
+    if (candy.special === 'wrapped') {
+      for (let ro = -1; ro <= 1; ro++) {
+        for (let co = -1; co <= 1; co++) {
+          const tr = row + ro
+          const tc = column + co
+          if (tr >= 0 && tr < BOARD_SIZE && tc >= 0 && tc < BOARD_SIZE) {
+            cells.push(`${tr},${tc}`)
+          }
+        }
+      }
+    }
+    return cells
+  }
+
+  const expandSpecialEffects = (
+    matches: Set<string>,
+    currentBoard: (Candy | null)[][]
+  ): Set<string> => {
+    const expanded = new Set(matches)
+    let changed = true
+    while (changed) {
+      changed = false
+      for (const pos of [...expanded]) {
+        const [r, c] = pos.split(',').map(Number)
+        const candy = currentBoard[r]?.[c]
+        if (!candy) continue
+        const affected = getSpecialAffectedCells(r, c, candy)
+        for (const aff of affected) {
+          if (!expanded.has(aff)) {
+            expanded.add(aff)
+            changed = true
+          }
+        }
+      }
+    }
+    return expanded
+  }
+
+  const chooseSpecialPosition = (
+    groupCells: Set<string>,
+    swapFirst: Pos | null,
+    swapSecond: Pos | null
+  ): string => {
+    const candidates = [swapSecond, swapFirst]
+    for (const cand of candidates) {
+      if (!cand) continue
+      const key = `${cand.row},${cand.column}`
+      if (groupCells.has(key)) return key
+    }
+    return [...groupCells][Math.floor(groupCells.size / 2)]
+  }
+
+  const determineSpecialCreates = (
+    groups: ReturnType<typeof findMatchGroups>,
+    swapFirst: Pos | null,
+    swapSecond: Pos | null,
+    currentBoard: (Candy | null)[][]
+  ) => {
+    const creates: { row: number; column: number; special: SpecialType; type: number }[] = []
+
+    for (const group of groups) {
+      const size = group.cells.size
+      const hasHorizontal = group.horizontal.length >= 3
+      const hasVertical = group.vertical.length >= 3
+
+      if (hasHorizontal && hasVertical) {
+        const posStr = chooseSpecialPosition(group.cells, swapFirst, swapSecond)
+        const [row, column] = posStr.split(',').map(Number)
+        const candy = currentBoard[row]?.[column]
+        creates.push({
+          row,
+          column,
+          special: 'wrapped',
+          type: candy?.type ?? group.type,
+        })
+        continue
+      }
+
+      if (size >= 5) {
+        const posStr = chooseSpecialPosition(group.cells, swapFirst, swapSecond)
+        const [row, column] = posStr.split(',').map(Number)
+        creates.push({
+          row,
+          column,
+          special: 'color-bomb',
+          type: -1, // type-agnostic
+        })
+        continue
+      }
+
+      if (group.horizontal.length >= 4) {
+        const posStr = chooseSpecialPosition(group.cells, swapFirst, swapSecond)
+        const [row, column] = posStr.split(',').map(Number)
+        creates.push({
+          row,
+          column,
+          special: 'striped-horizontal',
+          type: group.type,
+        })
+        continue
+      }
+
+      if (group.vertical.length >= 4) {
+        const posStr = chooseSpecialPosition(group.cells, swapFirst, swapSecond)
+        const [row, column] = posStr.split(',').map(Number)
+        creates.push({
+          row,
+          column,
+          special: 'striped-vertical',
+          type: group.type,
+        })
+      }
+    }
+    return creates
+  }
+
+  const getSpecialCombination = (first: Pos, second: Pos, b: (Candy | null)[][]) => {
+    const c1 = b[first.row][first.column]
+    const c2 = b[second.row][second.column]
+    if (!c1 || !c2) return null
+
+    const s1 = c1.special
+    const s2 = c2.special
+
+    if (s1 === 'color-bomb' && s2 === 'color-bomb') return 'color-color'
+    if (
+      (s1 === 'color-bomb' && s2 === null) ||
+      (s2 === 'color-bomb' && s1 === null)
+    ) {
+      return 'color-normal'
+    }
+    if (s1 === 'color-bomb' || s2 === 'color-bomb') return 'color-special'
+    if (isStriped(c1) && isStriped(c2)) return 'striped-striped'
+    if ((isStriped(c1) && s2 === 'wrapped') || (s1 === 'wrapped' && isStriped(c2))) {
+      return 'striped-wrapped'
+    }
+    if (s1 === 'wrapped' && s2 === 'wrapped') return 'wrapped-wrapped'
+    return null
+  }
+
+  const collapseAndFillBoard = (b: (Candy | null)[][]): (Candy | null)[][] => {
+    const newB = cloneBoard(b)
+
+    // Collapse downwards
+    for (let col = 0; col < BOARD_SIZE; col++) {
+      const remaining: (Candy | null)[] = []
+      for (let row = BOARD_SIZE - 1; row >= 0; row--) {
+        if (newB[row][col]) {
+          remaining.push(newB[row][col])
+        }
+      }
+      for (let row = BOARD_SIZE - 1; row >= 0; row--) {
+        const idx = BOARD_SIZE - 1 - row
+        newB[row][col] = remaining[idx] ?? null
+      }
+    }
+
+    // Fill empty spaces
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        if (!newB[r][c]) {
+          newB[r][c] = createCandy()
+        }
+      }
+    }
+
+    return newB
+  }
+
+  const testSwap = (first: Pos, second: Pos, b: (Candy | null)[][]): boolean => {
+    if (getSpecialCombination(first, second, b)) return true
+
+    // Simulasikan swap
+    const tempB = cloneBoard(b)
+    const t = tempB[first.row][first.column]
+    tempB[first.row][first.column] = tempB[second.row][second.column]
+    tempB[second.row][second.column] = t
+
+    const matches = findMatchesOnBoard(tempB)
+    return matches.size > 0
+  }
+
+  const hasPossibleMoveOnBoard = (b: (Candy | null)[][]): boolean => {
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        if (c + 1 < BOARD_SIZE && testSwap({ row: r, column: c }, { row: r, column: c + 1 }, b)) {
+          return true
+        }
+        if (r + 1 < BOARD_SIZE && testSwap({ row: r, column: c }, { row: r + 1, column: c }, b)) {
+          return true
+        }
+      }
+    }
+    return false
+  }
+
+  const findPossibleMoveOnBoard = (b: (Candy | null)[][]): { first: Pos; second: Pos } | null => {
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        if (c + 1 < BOARD_SIZE) {
+          const p1 = { row: r, column: c }
+          const p2 = { row: r, column: c + 1 }
+          if (testSwap(p1, p2, b)) return { first: p1, second: p2 }
+        }
+        if (r + 1 < BOARD_SIZE) {
+          const p1 = { row: r, column: c }
+          const p2 = { row: r + 1, column: c }
+          if (testSwap(p1, p2, b)) return { first: p1, second: p2 }
+        }
+      }
+    }
+    return null
+  }
+
+  const createsStartingMatch = (r: number, c: number, type: number, b: (Candy | null)[][]) => {
+    const horizontalMatch =
+      c >= 2 && b[r][c - 1]?.type === type && b[r][c - 2]?.type === type
+    const verticalMatch =
+      r >= 2 && b[r - 1][c]?.type === type && b[r - 2][c]?.type === type
+    return horizontalMatch || verticalMatch
+  }
+
+  const generateInitialBoard = (): (Candy | null)[][] => {
+    let attempts = 0
+    let b: (Candy | null)[][] = []
+
+    do {
+      b = Array(BOARD_SIZE)
+        .fill(null)
+        .map(() => Array(BOARD_SIZE).fill(null))
+
+      for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+          let type: number
+          do {
+            type = randomCandy()
+          } while (createsStartingMatch(r, c, type, b))
+          b[r][c] = createCandy(type)
+        }
+      }
+      attempts++
+    } while (!hasPossibleMoveOnBoard(b) && attempts < 100)
+
+    return b
+  }
+
+  // ==========================================================================
+  // HINT LOGIC
+  // ==========================================================================
+
+  const clearHint = useCallback(() => {
+    if (hintTimerRef.current) clearTimeout(hintTimerRef.current)
+    if (hintClearTimerRef.current) clearTimeout(hintClearTimerRef.current)
+    hintTimerRef.current = null
+    hintClearTimerRef.current = null
+    setIdleHintCells([])
+  }, [])
+
+  const startHintTimer = useCallback(() => {
+    clearHint()
+    if (gameOverRef.current || gameLockedRef.current) return
+
+    hintTimerRef.current = setTimeout(() => {
+      const pm = findPossibleMoveOnBoard(boardRef.current)
+      if (!pm) return
+      setIdleHintCells([pm.first, pm.second])
+
+      hintClearTimerRef.current = setTimeout(() => {
+        setIdleHintCells([])
+      }, 1500)
+    }, HINT_DELAY)
+  }, [clearHint])
+
+  // ==========================================================================
+  // RESOLVE MATCHES & SPECIAL COMBOS ASYNCHRONOUS LOOP
+  // ==========================================================================
+
+  const triggerPopVisuals = (cells: Set<string>, curBoard: (Candy | null)[][]) => {
+    setPoppingCells(new Set(cells))
+    if (boardContainerRef.current && particleLayerRef.current) {
+      const layerRect = particleLayerRef.current.getBoundingClientRect()
+      cells.forEach(pos => {
+        const [r, c] = pos.split(',').map(Number)
+        const el = boardContainerRef.current?.querySelector(`[data-cell="${r}-${c}"]`)
+        if (el) {
+          const rect = el.getBoundingClientRect()
+          spawnPopEffect(curBoard[r]?.[c] ?? null, rect, layerRect)
+        }
+      })
+    }
+  }
+
+  const resolveSpecialCombination = async (
+    first: Pos,
+    second: Pos,
+    comboType: string,
+    currentBoard: (Candy | null)[][]
+  ): Promise<(Candy | null)[][]> => {
+    const cells = new Set<string>()
+
+    if (comboType === 'color-color') {
+      spawnBoardFlash()
+      for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+          cells.add(`${r},${c}`)
+        }
+      }
+    } else if (comboType === 'color-normal') {
+      const normalPos =
+        currentBoard[first.row][first.column]?.special === 'color-bomb' ? second : first
+      const targetType = currentBoard[normalPos.row][normalPos.column]?.type
+
+      for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+          const candy = currentBoard[r][c]
+          if (candy && candy.type === targetType && candy.special !== 'color-bomb') {
+            cells.add(`${r},${c}`)
+          }
+        }
+      }
+      cells.add(`${first.row},${first.column}`)
+      cells.add(`${second.row},${second.column}`)
+    } else if (comboType === 'color-special') {
+      const specialPos =
+        currentBoard[first.row][first.column]?.special === 'color-bomb' ? second : first
+      const bombPos = specialPos === second ? first : second
+      const targetCandy = currentBoard[specialPos.row][specialPos.column]
+      const targetType = targetCandy?.type
+      const targetSpecial = targetCandy?.special ?? null
+
+      for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+          const candy = currentBoard[r][c]
+          if (candy && candy.type === targetType && candy.special !== 'color-bomb') {
+            cells.add(`${r},${c}`)
+            const affected = getSpecialAffectedCells(r, c, { special: targetSpecial })
+            for (const aff of affected) cells.add(aff)
+          }
+        }
+      }
+      cells.add(`${bombPos.row},${bombPos.column}`)
+    } else if (comboType === 'striped-striped') {
+      for (let cur = 0; cur < BOARD_SIZE; cur++) {
+        cells.add(`${first.row},${cur}`)
+        cells.add(`${cur},${first.column}`)
+        cells.add(`${second.row},${cur}`)
+        cells.add(`${cur},${second.column}`)
+      }
+    } else if (comboType === 'striped-wrapped') {
+      for (let ro = -1; ro <= 1; ro++) {
+        for (let co = -1; co <= 1; co++) {
+          const r = first.row + ro
+          const c = first.column + co
+          if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE) {
+            for (let cur = 0; cur < BOARD_SIZE; cur++) {
+              cells.add(`${r},${cur}`)
+              cells.add(`${cur},${c}`)
+            }
+          }
+        }
+      }
+    } else if (comboType === 'wrapped-wrapped') {
+      for (let ro = -2; ro <= 2; ro++) {
+        for (let co = -2; co <= 2; co++) {
+          const r = first.row + ro
+          const c = first.column + co
+          if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE) {
+            cells.add(`${r},${c}`)
+          }
+        }
+      }
+    }
+
+    const specialGained = cells.size * SCORE_PER_CANDY * 2
+    setScore(s => s + specialGained)
+    showScorePopup(specialGained, cells)
+
+    triggerPopVisuals(cells, currentBoard)
+    await wait(POP_DELAY)
+
+    // Hapus cell
+    const updated = cloneBoard(currentBoard)
+    cells.forEach(pos => {
+      const [r, c] = pos.split(',').map(Number)
+      updated[r][c] = null
+    })
+
+    setPoppingCells(new Set())
+
+    // Collapse dan refill
+    const filledBoard = collapseAndFillBoard(updated)
+    setBoard(filledBoard)
+    boardRef.current = filledBoard
+
+    await wait(FALL_DELAY)
+
+    const matches = findMatchesOnBoard(filledBoard)
+    if (matches.size > 0) {
+      return await resolveMatchesLoop(matches, first, second, filledBoard)
+    }
+
+    return filledBoard
+  }
+
+  const resolveMatchesLoop = async (
+    initialMatches: Set<string>,
+    swapFirst: Pos | null,
+    swapSecond: Pos | null,
+    initialBoardState: (Candy | null)[][]
+  ): Promise<(Candy | null)[][]> => {
+    let combo = 0
+    let matches = initialMatches
+    let curBoard = initialBoardState
+
+    while (matches.size > 0) {
+      combo++
+      const groups = findMatchGroups(curBoard)
+      const specialCreates = determineSpecialCreates(groups, swapFirst, swapSecond, curBoard)
+      const expanded = expandSpecialEffects(matches, curBoard)
+
+      const comboMultiplier = 1 + (combo - 1) * 0.5
+      const gained = Math.round(expanded.size * SCORE_PER_CANDY * comboMultiplier)
+
+      setScore(s => s + gained)
+      setMessage(combo > 1 ? `COMBO x${combo}` : `Match! +${gained}`)
+
+      if (combo > 1) {
+        showComboPopup(combo)
+      }
+      showScorePopup(gained, expanded)
+
+      triggerPopVisuals(expanded, curBoard)
+      await wait(POP_DELAY)
+
+      // Hapus matches
+      const updated = cloneBoard(curBoard)
+      expanded.forEach(pos => {
+        const [r, c] = pos.split(',').map(Number)
+        updated[r][c] = null
+      })
+
+      // Spawn special candies yang tercipta
+      for (const sp of specialCreates) {
+        if (expanded.has(`${sp.row},${sp.column}`)) {
+          updated[sp.row][sp.column] = {
+            id: getNextId(),
+            type: sp.type,
+            special: sp.special,
+            justCreated: true,
+          }
+        }
+      }
+
+      setPoppingCells(new Set())
+
+      // Collapse and refill
+      curBoard = collapseAndFillBoard(updated)
+      setBoard(curBoard)
+      boardRef.current = curBoard
+
+      await wait(FALL_DELAY)
+
+      matches = findMatchesOnBoard(curBoard)
+    }
+
+    return curBoard
+  }
+
+  const finishMove = (finalBoard: (Candy | null)[][]) => {
+    setSelectedCandy(null)
+
+    const currentScore = scoreRef.current
+    const currentMoves = movesRef.current
+    const currentMode = gameModeRef.current
+
+    if (currentMode === 'target' && currentScore >= TARGET_SCORE) {
+      setGameWon(true)
+      setGameOver(true)
+      gameLockedRef.current = true
+      setMessage('Target tercapai! Kamu menang.')
       return
     }
 
-    // Tukar posisi kedua pion di dalam array state
-    setGrid(prev => {
-      const next = [...prev]
-      ;[next[from], next[to]] = [next[to], next[from]]
-      return next
-    })
+    if (currentMoves <= 0) {
+      setGameWon(false)
+      setGameOver(true)
+      gameLockedRef.current = true
+      setMessage('Langkah habis.')
+      return
+    }
 
-    const rowFrom = Math.floor(from / GRID_SIZE)
-    const colFrom = from % GRID_SIZE
-    const rowTo   = Math.floor(to / GRID_SIZE)
-    const colTo   = to % GRID_SIZE
-    setLastMsg(
-      `✅ Tukar [${rowFrom},${colFrom}] ↔ [${rowTo},${colTo}]`
-    )
+    if (!hasPossibleMoveOnBoard(finalBoard)) {
+      setMessage('Tidak ada kombinasi tersisa. Mengacak papan...')
+      // Shuffle board
+      let flat = finalBoard.flat().filter(Boolean) as Candy[]
+      let shuffled: (Candy | null)[][] = []
+      let attempts = 0
+      do {
+        flat = [...flat].sort(() => Math.random() - 0.5)
+        let idx = 0
+        shuffled = Array(BOARD_SIZE)
+          .fill(null)
+          .map(() => Array(BOARD_SIZE).fill(null))
+        for (let r = 0; r < BOARD_SIZE; r++) {
+          for (let c = 0; c < BOARD_SIZE; c++) {
+            shuffled[r][c] = flat[idx++] ?? createCandy()
+          }
+        }
+        attempts++
+      } while (
+        (findMatchesOnBoard(shuffled).size > 0 || !hasPossibleMoveOnBoard(shuffled)) &&
+        attempts < 100
+      )
 
-    squareBeingDragged.current  = null
-    squareBeingReplaced.current = null
+      setBoard(shuffled)
+      boardRef.current = shuffled
+      gameLockedRef.current = false
+      startHintTimer()
+      return
+    }
+
+    setMessage('Nice! Cari kombinasi berikutnya.')
+    gameLockedRef.current = false
+    startHintTimer()
   }
 
-  function handleDragEnd() {
-    // Fallback: bersihkan state jika drag berakhir tanpa drop valid
-    squareBeingDragged.current  = null
-    squareBeingReplaced.current = null
-    setDraggingIdx(null)
-    setDragOverIdx(null)
+  // ==========================================================================
+  // MOVE EXECUTION (CLICK / DRAG)
+  // ==========================================================================
+
+  const performMove = async (first: Pos, second: Pos) => {
+    if (gameLockedRef.current || gameOverRef.current) return
+    gameLockedRef.current = true
+    clearHint()
+
+    // 1. Swap sementara di state & ref
+    const swapped = cloneBoard(boardRef.current)
+    const temp = swapped[first.row][first.column]
+    swapped[first.row][first.column] = swapped[second.row][second.column]
+    swapped[second.row][second.column] = temp
+
+    setBoard(swapped)
+    boardRef.current = swapped
+
+    await wait(180) // Durasi animasi swap
+
+    // 2. Cek kombinasi spesial
+    const specialCombo = getSpecialCombination(first, second, swapped)
+    if (specialCombo) {
+      setMoves(m => m - 1)
+      const afterCombo = await resolveSpecialCombination(first, second, specialCombo, swapped)
+      finishMove(afterCombo)
+      return
+    }
+
+    // 3. Cek apakah swap menghasilkan matches biasa
+    const matches = findMatchesOnBoard(swapped)
+    if (matches.size === 0) {
+      // Revert swap
+      const reverted = cloneBoard(swapped)
+      const t = reverted[first.row][first.column]
+      reverted[first.row][first.column] = reverted[second.row][second.column]
+      reverted[second.row][second.column] = t
+
+      setBoard(reverted)
+      boardRef.current = reverted
+      setMessage('Swap itu tidak menghasilkan match.')
+
+      await wait(180)
+      gameLockedRef.current = false
+      startHintTimer()
+      return
+    }
+
+    // 4. Match valid! Kurangi langkah dan selesaikan reaksi berantai
+    setMoves(m => m - 1)
+    const afterMatches = await resolveMatchesLoop(matches, first, second, swapped)
+    finishMove(afterMatches)
   }
 
-  // ---------------------------------------------------------------------------
-  // Render
-  // ---------------------------------------------------------------------------
+  // ==========================================================================
+  // CLICK HANDLER
+  // ==========================================================================
+
+  const handleCandyClick = (r: number, c: number) => {
+    if (gameLockedRef.current || gameOverRef.current || movesRef.current <= 0) return
+    clearHint()
+
+    if (!selectedCandy) {
+      setSelectedCandy({ row: r, column: c })
+      return
+    }
+
+    if (selectedCandy.row === r && selectedCandy.column === c) {
+      setSelectedCandy(null)
+      return
+    }
+
+    const currentCandy = { row: r, column: c }
+    if (!isAdjacent(selectedCandy, currentCandy)) {
+      setSelectedCandy(currentCandy)
+      return
+    }
+
+    const first = selectedCandy
+    setSelectedCandy(null)
+    performMove(first, currentCandy)
+  }
+
+  // ==========================================================================
+  // DRAG AND DROP HANDLERS (HTML5)
+  // ==========================================================================
+
+  const handleDragStart = (r: number, c: number) => {
+    if (gameLockedRef.current || gameOverRef.current) return
+    squareBeingDragged.current = { row: r, column: c }
+    clearHint()
+  }
+
+  const handleDragOver = (e: React.DragEvent<HTMLButtonElement>, r: number, c: number) => {
+    e.preventDefault()
+    squareBeingReplaced.current = { row: r, column: c }
+  }
+
+  const handleDragEnter = (r: number, c: number) => {
+    setDragOverPos({ row: r, column: c })
+  }
+
+  const handleDragLeave = () => {
+    setDragOverPos(null)
+  }
+
+  const handleDrop = (e: React.DragEvent<HTMLButtonElement>) => {
+    e.preventDefault()
+    setDragOverPos(null)
+
+    const from = squareBeingDragged.current
+    const to = squareBeingReplaced.current
+
+    squareBeingDragged.current = null
+    squareBeingReplaced.current = null
+
+    if (!from || !to) return
+    if (from.row === to.row && from.column === to.column) return
+
+    // Validasi permen yang bersebelahan
+    if (!isAdjacent(from, to)) {
+      setMessage('❌ Tidak valid! Hanya boleh ditukar dengan pion yang bersebelahan.')
+      return
+    }
+
+    performMove(from, to)
+  }
+
+  const handleDragEnd = () => {
+    squareBeingDragged.current = null
+    squareBeingReplaced.current = null
+    setDragOverPos(null)
+  }
+
+  // ==========================================================================
+  // RESTART & GAME CONTROLS
+  // ==========================================================================
+
+  const restartGame = useCallback(() => {
+    clearHint()
+    setScore(0)
+    setMoves(STARTING_MOVES)
+    setSelectedCandy(null)
+    setGameOver(false)
+    setGameWon(false)
+    setPoppingCells(new Set())
+    gameLockedRef.current = false
+    gameOverRef.current = false
+
+    const newBoard = generateInitialBoard()
+    setBoard(newBoard)
+    boardRef.current = newBoard
+
+    setMessage('Pilih atau drag dua permen yang bersebelahan.')
+    startHintTimer()
+  }, [clearHint, startHintTimer])
+
+  const changeGameMode = (mode: 'target' | 'unlimited') => {
+    if (gameMode === mode) return
+    setGameMode(mode)
+    restartGame()
+  }
+
+  // Mount effect
+  useEffect(() => {
+    restartGame()
+    return () => clearHint()
+  }, [restartGame, clearHint])
+
+  // ==========================================================================
+  // RENDER UI
+  // ==========================================================================
 
   return (
-    <main className="min-h-screen bg-gray-950 flex flex-col items-center justify-center gap-6 select-none">
+    <main className="game relative w-[min(94vw,520px)] mx-auto py-6" id="game">
+      {/* ================================================================= */}
+      {/* HEADER                                                            */}
+      {/* ================================================================= */}
+      <header className="header flex justify-between items-center mb-5">
+        <div className="brand min-w-0">
+          <p className="label m-0 mb-1.5 text-[var(--yellow)] text-[10px] font-[850] tracking-[0.2em] leading-none uppercase">
+            SWEET GRID
+          </p>
+          <h1 className="m-0 text-[var(--text)] text-[clamp(27px,7vw,39px)] font-[800] leading-[0.98] tracking-[-0.055em]">
+            Match. Pop. Repeat.
+          </h1>
+        </div>
 
-      <h1 className="text-3xl font-bold text-white tracking-widest uppercase">
-        Sweet Game
-      </h1>
+        <div className="header-actions flex items-center ml-4">
+          <button
+            id="restartBtn"
+            className="restart-btn"
+            type="button"
+            aria-label="Mulai ulang permainan"
+            title="Mulai ulang"
+            onClick={restartGame}
+          >
+            <span aria-hidden="true">↻</span>
+          </button>
+        </div>
+      </header>
 
-      {/* ── Grid 8×8 ── */}
-      <div className="grid grid-cols-8 gap-1 p-4 bg-gray-800 rounded-2xl shadow-2xl shadow-black/60">
-        {grid.map((colorId, index) => {
-          const candy      = CANDY_COLORS[colorId]
-          const isDragging = draggingIdx === index
-          const isDragOver = dragOverIdx === index
-          const isInvalid  = invalidIdx  === index
+      {/* ================================================================= */}
+      {/* MODE SELECT                                                       */}
+      {/* ================================================================= */}
+      <div className="mode-select grid grid-cols-2 gap-2 mb-3" role="group" aria-label="Mode permainan">
+        <button
+          id="modeTargetBtn"
+          className={`mode-btn ${gameMode === 'target' ? 'is-active' : ''}`}
+          type="button"
+          aria-pressed={gameMode === 'target'}
+          onClick={() => changeGameMode('target')}
+        >
+          Target Skor
+        </button>
 
-          return (
-            <div
-              key={index}
-              draggable={true}
-              onDragStart={() => handleDragStart(index)}
-              onDragOver={(e) => handleDragOver(e, index)}
-              onDragEnter={() => handleDragEnter(index)}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              onDragEnd={handleDragEnd}
-              title={`row ${Math.floor(index / GRID_SIZE)}, col ${index % GRID_SIZE} (idx: ${index})`}
-              className={[
-                // Base
-                candy.bg,
-                'w-12 h-12 rounded-lg',
-                'flex items-center justify-center text-xl',
-                'shadow-md cursor-grab active:cursor-grabbing',
-                'transition-all duration-150',
-                // State visual
-                isDragging ? 'opacity-30 scale-90'                              : '',
-                isDragOver ? `ring-4 ring-white scale-110 brightness-125`       : '',
-                isInvalid  ? 'ring-4 ring-red-500 animate-pulse'                : '',
-                !isDragging && !isDragOver && !isInvalid
-                  ? 'hover:scale-110 hover:brightness-125'
-                  : '',
-              ].join(' ')}
-            >
-              {candy.label}
-            </div>
-          )
-        })}
+        <button
+          id="modeUnlimitedBtn"
+          className={`mode-btn ${gameMode === 'unlimited' ? 'is-active' : ''}`}
+          type="button"
+          aria-pressed={gameMode === 'unlimited'}
+          onClick={() => changeGameMode('unlimited')}
+        >
+          Tanpa Batas
+        </button>
       </div>
 
-      {/* ── Status bar ── */}
-      <p className="text-gray-400 text-sm font-mono min-h-[1.25rem]">
-        {lastMsg}
-      </p>
+      {/* ================================================================= */}
+      {/* GAME STATS                                                        */}
+      {/* ================================================================= */}
+      <section className="stats grid grid-cols-3 gap-2 mb-3" aria-label="Informasi permainan">
+        <div className="stat stat-score">
+          <span>SKOR</span>
+          <strong id="score">{score}</strong>
+        </div>
 
-      {/* ── Info ── */}
-      <p className="text-gray-600 text-xs">
-        8 × 8 grid · {TOTAL_CELLS} cells · {CANDY_COLORS.length} candy types
-      </p>
+        <div className="stat stat-moves">
+          <span>LANGKAH</span>
+          <strong id="moves">{moves}</strong>
+        </div>
+
+        <div className="stat stat-target">
+          <span>TARGET</span>
+          <strong id="target">{gameMode === 'unlimited' ? '∞' : TARGET_SCORE}</strong>
+        </div>
+      </section>
+
+      {/* ================================================================= */}
+      {/* GAME AREA                                                         */}
+      {/* ================================================================= */}
+      <section className="game-area relative flex justify-center" aria-label="Area permainan">
+        <div
+          ref={boardContainerRef}
+          className="board-container relative w-[min(94vw,420px)] aspect-square p-2 sm:p-2.5 rounded-2xl bg-[#151920] border border-[#363d4a] shadow-2xl flex items-center justify-center overflow-hidden"
+        >
+          <div
+            id="board"
+            className="board grid grid-cols-8 grid-rows-8 gap-1.5 w-full h-full touch-none select-none"
+            role="grid"
+            aria-label="Papan permainan Sweet Grid"
+            aria-rowcount={8}
+            aria-colcount={8}
+          >
+            {board.map((row, r) =>
+              row.map((candyData, c) => {
+                if (!candyData) {
+                  return (
+                    <div
+                      key={`empty-${r}-${c}`}
+                      data-cell={`${r}-${c}`}
+                      className="w-full h-full aspect-square opacity-0 pointer-events-none"
+                    />
+                  )
+                }
+
+                const isSelected = selectedCandy?.row === r && selectedCandy?.column === c
+                const isHint = idleHintCells.some(h => h.row === r && h.column === c)
+                const isPopping = poppingCells.has(`${r},${c}`)
+                const isDragOver = dragOverPos?.row === r && dragOverPos?.column === c
+
+                let specialClass = ''
+                if (candyData.special === 'color-bomb') specialClass = 'candy-color-bomb'
+                else if (candyData.special === 'striped-horizontal') specialClass = 'candy-striped-horizontal'
+                else if (candyData.special === 'striped-vertical') specialClass = 'candy-striped-vertical'
+                else if (candyData.special === 'wrapped') specialClass = 'candy-wrapped'
+
+                const colorClass =
+                  candyData.special === 'color-bomb' ? '' : candyClasses[candyData.type] ?? ''
+
+                return (
+                  <button
+                    key={candyData.id}
+                    data-cell={`${r}-${c}`}
+                    type="button"
+                    role="gridcell"
+                    draggable={true}
+                    onDragStart={() => handleDragStart(r, c)}
+                    onDragOver={e => handleDragOver(e, r, c)}
+                    onDragEnter={() => handleDragEnter(r, c)}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    onDragEnd={handleDragEnd}
+                    onClick={() => handleCandyClick(r, c)}
+                    className={[
+                      'candy',
+                      'w-full h-full aspect-square rounded-xl block relative overflow-hidden',
+                      colorClass,
+                      specialClass,
+                      isSelected ? 'selected' : '',
+                      isHint ? 'hint' : '',
+                      isPopping ? 'pop' : '',
+                      isDragOver ? 'brightness-125 scale-105' : '',
+                      candyData.justCreated ? 'special-born' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                    aria-label={`Permen baris ${r + 1}, kolom ${c + 1}`}
+                  />
+                )
+              })
+            )}
+          </div>
+
+          <div
+            ref={particleLayerRef}
+            id="particleLayer"
+            className="particle-layer pointer-events-none absolute inset-0 z-10 overflow-hidden"
+            aria-hidden="true"
+          />
+        </div>
+      </section>
+
+      {/* ================================================================= */}
+      {/* GAME MESSAGE / FEEDBACK                                           */}
+      {/* ================================================================= */}
+      <div className="game-feedback min-h-[38px] flex items-center justify-center">
+        <p id="message" className="message" role="status" aria-live="polite">
+          {message}
+        </p>
+      </div>
+
+      {/* ================================================================= */}
+      {/* GAME OVER / RESULT OVERLAY                                        */}
+      {/* ================================================================= */}
+      {gameOver && (
+        <section id="gameOverlay" className="game-overlay" aria-hidden="false">
+          <div className="game-overlay-card">
+            <p className="label">SWEET GRID</p>
+
+            <h2 id="overlayTitle">
+              {gameWon
+                ? 'Target tercapai!'
+                : gameMode === 'unlimited'
+                ? 'Langkah habis'
+                : 'Langkah habis'}
+            </h2>
+
+            <p id="overlayMessage">
+              {gameWon
+                ? 'Kamu berhasil melewati target skor!'
+                : gameMode === 'unlimited'
+                ? 'Mode Tanpa Batas tidak punya target. Coba kalahkan skor ini di percobaan berikutnya.'
+                : 'Coba lagi dan pecahkan skor terbaikmu.'}
+            </p>
+
+            <div className="overlay-score">
+              <span>SKOR</span>
+              <strong id="finalScore">{score}</strong>
+            </div>
+
+            <button
+              id="overlayRestartBtn"
+              className="overlay-restart-btn"
+              type="button"
+              onClick={restartGame}
+            >
+              Main Lagi
+            </button>
+          </div>
+        </section>
+      )}
+
+      {/* Hidden live accessibility feedback */}
+      <div id="gameStatus" className="game-status" aria-live="polite" aria-atomic="true">
+        {message}
+      </div>
     </main>
   )
 }

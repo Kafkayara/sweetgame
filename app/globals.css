@@ -422,3 +422,14 @@ body {
   40% { transform: translate(-50%, -50%) scale(1) rotate(0deg); opacity: 1; }
   100% { transform: translate(-50%, -58%) scale(1) rotate(0deg); opacity: 0; }
 }
+
+/* Animasi mendarat permen setelah jatuh */
+.candy-land {
+  animation: candyLand 0.18s ease-out;
+}
+
+@keyframes candyLand {
+  0% { transform: scaleY(0.82) scaleX(1.1); }
+  55% { transform: scaleY(1.06) scaleX(0.97); }
+  100% { transform: scaleY(1) scaleX(1); }
+}

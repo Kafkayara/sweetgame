@@ -140,6 +140,57 @@ function wait(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
+function createCandyLabel(row: number, column: number, candy: Candy | null): string {
+  const position = `Permen baris ${row + 1}, kolom ${column + 1}`
+  if (!candy) return position
+  if (candy.special === 'color-bomb') return `${position}, bom warna`
+  if (candy.special === 'striped-horizontal') return `${position}, permen bergaris horizontal`
+  if (candy.special === 'striped-vertical') return `${position}, permen bergaris vertikal`
+  if (candy.special === 'wrapped') return `${position}, permen bungkus`
+  return `${position}, warna ${PASTEL_CANDIES[candy.type]?.name ?? candy.type}`
+}
+
+function computeFallOffsets(boardState: (Candy | null)[][]): number[][] {
+  const offsets: number[][] = []
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    offsets.push(new Array(BOARD_SIZE).fill(0))
+  }
+
+  for (let col = 0; col < BOARD_SIZE; col++) {
+    const removedRows: number[] = []
+    const survivorRows: number[] = []
+
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      if (boardState[r][col] === null) {
+        removedRows.push(r)
+      } else {
+        survivorRows.push(r)
+      }
+    }
+
+    const emptyCount = removedRows.length
+    if (emptyCount === 0) continue
+
+    for (let i = 0; i < survivorRows.length; i++) {
+      const originalRow = survivorRows[i]
+      const finalRow = emptyCount + i
+      let shift = 0
+      for (const removedRow of removedRows) {
+        if (removedRow < originalRow) {
+          shift++
+        }
+      }
+      offsets[finalRow][col] = shift
+    }
+
+    for (let finalRow = 0; finalRow < emptyCount; finalRow++) {
+      offsets[finalRow][col] = (emptyCount - finalRow) + 3
+    }
+  }
+
+  return offsets
+}
+
 // ============================================================================
 // KOMPONEN UTAMA
 // ============================================================================
@@ -162,6 +213,11 @@ export default function SweetGridGame() {
 
   // Animation visual states
   const [poppingCells, setPoppingCells] = useState<Set<string>>(new Set())
+  const [landingCandies, setLandingCandies] = useState<Set<string>>(new Set())
+  const [animatingSwap, setAnimatingSwap] = useState<{
+    first: Pos
+    second: Pos
+  } | null>(null)
 
   // Refs untuk asynchronous gameplay & lock
   const boardRef = useRef<(Candy | null)[][]>([])
@@ -943,6 +999,18 @@ export default function SweetGridGame() {
     setBoard(filledBoard)
     boardRef.current = filledBoard
 
+    // Trigger efek candy-land pada baris yang jatuh
+    const landedSet = new Set<string>()
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        if (updated[r][c] === null) {
+          landedSet.add(`${r},${c}`)
+        }
+      }
+    }
+    setLandingCandies(landedSet)
+    setTimeout(() => setLandingCandies(new Set()), 350)
+
     await wait(FALL_DELAY)
 
     const matches = findMatchesOnBoard(filledBoard)
@@ -1008,6 +1076,18 @@ export default function SweetGridGame() {
       curBoard = collapseAndFillBoard(updated)
       setBoard(curBoard)
       boardRef.current = curBoard
+
+      // Trigger efek candy-land
+      const landedSet = new Set<string>()
+      for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+          if (updated[r][c] === null) {
+            landedSet.add(`${r},${c}`)
+          }
+        }
+      }
+      setLandingCandies(landedSet)
+      setTimeout(() => setLandingCandies(new Set()), 350)
 
       await wait(FALL_DELAY)
 
@@ -1404,12 +1484,16 @@ export default function SweetGridGame() {
                   )
                 }
 
+                const isLanding = landingCandies.has(`${r},${c}`)
+
                 return (
                   <button
                     key={candyData.id}
                     data-cell={`${r}-${c}`}
                     type="button"
                     role="gridcell"
+                    aria-rowindex={r + 1}
+                    aria-colindex={c + 1}
                     draggable={true}
                     onDragStart={() => handleDragStart(r, c)}
                     onDragOver={e => handleDragOver(e, r, c)}
@@ -1426,12 +1510,13 @@ export default function SweetGridGame() {
                       isSelected ? 'ring-4 ring-white scale-90 z-20' : '',
                       isHint ? 'ring-2 ring-amber-300 animate-bounce' : '',
                       isPopping ? 'pop' : '',
+                      isLanding ? 'candy-land' : '',
                       isDragOver ? 'brightness-125 scale-105 z-10' : '',
                       candyData.justCreated ? 'special-born' : '',
                     ]
                       .filter(Boolean)
                       .join(' ')}
-                    aria-label={`Permen baris ${r + 1}, kolom ${c + 1}`}
+                    aria-label={createCandyLabel(r, c, candyData)}
                   >
                     {/* Efek kilauan cahaya (glossy) di bagian atas pion */}
                     <div className="absolute inset-x-1 top-0.5 h-1/2 rounded-t-lg bg-gradient-to-b from-white/40 to-transparent pointer-events-none" />
@@ -1463,6 +1548,11 @@ export default function SweetGridGame() {
         <p id="message" className="message text-slate-400 text-xs sm:text-sm text-center font-medium mt-2" role="status" aria-live="polite">
           {message}
         </p>
+      </div>
+
+      {/* Screen-reader live region dari HTML/JS asli */}
+      <div id="gameStatus" className="sr-only" aria-live="polite" aria-atomic="true">
+        {message}
       </div>
 
       {/* ================================================================= */}

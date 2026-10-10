@@ -1,5 +1,15 @@
 @import "tailwindcss";
 
+@theme {
+  --animate-grid-shake: grid-shake 300ms ease-in-out;
+
+  @keyframes grid-shake {
+    0%, 100% { transform: translateX(0); }
+    20%, 60% { transform: translateX(-3px); }
+    40%, 80% { transform: translateX(3px); }
+  }
+}
+
 :root {
   --background: #0d0f14;
   --background-soft: #12151c;
@@ -349,14 +359,15 @@ body {
 .streak {
   position: absolute;
   pointer-events: none;
+  will-change: transform, opacity;
 }
 
 .streak-horizontal {
   left: 0;
   right: 0;
-  height: 10px;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.95) 45%, rgba(255, 255, 255, 0.95) 55%, transparent);
-  box-shadow: 0 0 18px 4px rgba(255, 255, 255, 0.7);
+  height: 14px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.18) 20%, #fff 48%, #fff 52%, rgba(255, 255, 255, 0.18) 80%, transparent);
+  box-shadow: 0 0 22px 7px rgba(255, 255, 255, 0.85);
   transform: translateY(-50%) scaleX(0);
   animation: streakFlashH 0.4s ease-out forwards;
 }
@@ -364,9 +375,9 @@ body {
 .streak-vertical {
   top: 0;
   bottom: 0;
-  width: 10px;
-  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.95) 45%, rgba(255, 255, 255, 0.95) 55%, transparent);
-  box-shadow: 0 0 18px 4px rgba(255, 255, 255, 0.7);
+  width: 14px;
+  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.18) 20%, #fff 48%, #fff 52%, rgba(255, 255, 255, 0.18) 80%, transparent);
+  box-shadow: 0 0 22px 7px rgba(255, 255, 255, 0.85);
   transform: translateX(-50%) scaleY(0);
   animation: streakFlashV 0.4s ease-out forwards;
 }

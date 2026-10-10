@@ -195,6 +195,49 @@ function computeFallOffsets(boardState: (Candy | null)[][]): number[][] {
 // KOMPONEN UTAMA
 // ============================================================================
 
+function VictoryModal({
+  score,
+  onRestart,
+}: {
+  score: number
+  onRestart: () => void
+}) {
+  return (
+    <section
+      id="gameOverlay"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="overlayTitle"
+    >
+      <div className="w-full max-w-sm rounded-3xl border border-amber-300/30 bg-slate-950 p-7 text-center shadow-2xl">
+        <p className="mb-3 text-xs font-extrabold tracking-[0.25em] text-amber-300">
+          SWEET GRID
+        </p>
+        <h2 id="overlayTitle" className="text-3xl font-black text-white">
+          Target Tercapai!
+        </h2>
+        <div className="my-6 rounded-2xl border border-slate-700 bg-slate-900/80 px-6 py-4">
+          <span className="block text-xs font-extrabold tracking-widest text-slate-400">
+            SKOR AKHIR
+          </span>
+          <strong id="finalScore" className="mt-1 block text-4xl font-black text-amber-300">
+            {score}
+          </strong>
+        </div>
+        <button
+          id="overlayRestartBtn"
+          className="w-full rounded-xl bg-amber-400 px-5 py-3 font-extrabold text-slate-950 transition-colors hover:bg-amber-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-200"
+          type="button"
+          onClick={onRestart}
+        >
+          Main Lagi
+        </button>
+      </div>
+    </section>
+  )
+}
+
 export default function SweetGridGame() {
   // Game mode & stats
   const [gameMode, setGameMode] = useState<'target' | 'unlimited'>('target')
@@ -214,6 +257,7 @@ export default function SweetGridGame() {
   // Animation visual states
   const [poppingCells, setPoppingCells] = useState<Set<string>>(new Set())
   const [landingCandies, setLandingCandies] = useState<Set<string>>(new Set())
+  const [gridShaking, setGridShaking] = useState<boolean>(false)
   const [animatingSwap, setAnimatingSwap] = useState<{
     first: Pos
     second: Pos
@@ -235,6 +279,8 @@ export default function SweetGridGame() {
   // Timer refs
   const hintTimerRef = useRef<NodeJS.Timeout | null>(null)
   const hintClearTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const shakeTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const shakeAnimationFrameRef = useRef<number | null>(null)
 
   // DOM ref untuk particle layer & board container
   const boardContainerRef = useRef<HTMLDivElement | null>(null)
@@ -882,7 +928,31 @@ export default function SweetGridGame() {
   // RESOLVE MATCHES & SPECIAL COMBOS ASYNCHRONOUS LOOP
   // ==========================================================================
 
+  const triggerGridShake = () => {
+    if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current)
+    if (shakeAnimationFrameRef.current !== null) {
+      cancelAnimationFrame(shakeAnimationFrameRef.current)
+    }
+
+    setGridShaking(false)
+    shakeAnimationFrameRef.current = requestAnimationFrame(() => {
+      shakeAnimationFrameRef.current = null
+      setGridShaking(true)
+      shakeTimerRef.current = setTimeout(() => {
+        setGridShaking(false)
+        shakeTimerRef.current = null
+      }, 300)
+    })
+  }
+
   const triggerPopVisuals = (cells: Set<string>, curBoard: (Candy | null)[][]) => {
+    const detonatesSpecial = [...cells].some(position => {
+      const [row, column] = position.split(',').map(Number)
+      return Boolean(curBoard[row]?.[column]?.special)
+    })
+
+    if (detonatesSpecial) triggerGridShake()
+
     setPoppingCells(new Set(cells))
     if (boardContainerRef.current && particleLayerRef.current) {
       const layerRect = particleLayerRef.current.getBoundingClientRect()
@@ -1321,7 +1391,13 @@ export default function SweetGridGame() {
   // Mount effect
   useEffect(() => {
     restartGame()
-    return () => clearHint()
+    return () => {
+      clearHint()
+      if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current)
+      if (shakeAnimationFrameRef.current !== null) {
+        cancelAnimationFrame(shakeAnimationFrameRef.current)
+      }
+    }
   }, [restartGame, clearHint])
 
   // ==========================================================================
@@ -1435,7 +1511,9 @@ export default function SweetGridGame() {
       <section className="game-area relative flex justify-center" aria-label="Area permainan">
         <div
           ref={boardContainerRef}
-          className="board-container relative w-[min(94vw,420px)] aspect-square p-2.5 sm:p-3 rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl flex items-center justify-center overflow-hidden"
+          className={`board-container relative w-[min(94vw,420px)] aspect-square p-2.5 sm:p-3 rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl flex items-center justify-center overflow-hidden ${
+            gridShaking ? 'animate-grid-shake' : ''
+          }`}
         >
           <div
             id="board"
@@ -1541,60 +1619,12 @@ export default function SweetGridGame() {
         </div>
       </section>
 
-      {/* ================================================================= */}
-      {/* GAME MESSAGE / FEEDBACK                                           */}
-      {/* ================================================================= */}
-      <div className="game-feedback min-h-[38px] flex items-center justify-center">
-        <p id="message" className="message text-slate-400 text-xs sm:text-sm text-center font-medium mt-2" role="status" aria-live="polite">
-          {message}
-        </p>
-      </div>
-
       {/* Screen-reader live region dari HTML/JS asli */}
       <div id="gameStatus" className="sr-only" aria-live="polite" aria-atomic="true">
         {message}
       </div>
 
-      {/* ================================================================= */}
-      {/* GAME OVER / RESULT OVERLAY                                        */}
-      {/* ================================================================= */}
-      {gameOver && (
-        <section id="gameOverlay" className="game-overlay" aria-hidden="false">
-          <div className="game-overlay-card">
-            <p className="label">SWEET GRID</p>
-
-            <h2 id="overlayTitle">
-              {gameWon
-                ? 'Target tercapai!'
-                : gameMode === 'unlimited'
-                ? 'Langkah habis'
-                : 'Langkah habis'}
-            </h2>
-
-            <p id="overlayMessage">
-              {gameWon
-                ? 'Kamu berhasil melewati target skor!'
-                : gameMode === 'unlimited'
-                ? 'Mode Tanpa Batas tidak punya target. Coba kalahkan skor ini di percobaan berikutnya.'
-                : 'Coba lagi dan pecahkan skor terbaikmu.'}
-            </p>
-
-            <div className="overlay-score">
-              <span>SKOR</span>
-              <strong id="finalScore">{score}</strong>
-            </div>
-
-            <button
-              id="overlayRestartBtn"
-              className="overlay-restart-btn"
-              type="button"
-              onClick={restartGame}
-            >
-              Main Lagi
-            </button>
-          </div>
-        </section>
-      )}
+      {gameWon && <VictoryModal score={score} onRestart={restartGame} />}
     </main>
   )
 }

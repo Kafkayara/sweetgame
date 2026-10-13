@@ -237,6 +237,26 @@ body {
   );
 }
 
+.candy-color-bomb-overlay {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 81, 126, 0.55),
+    rgba(255, 207, 64, 0.5),
+    rgba(66, 221, 177, 0.5),
+    rgba(76, 161, 255, 0.55),
+    rgba(188, 104, 255, 0.55),
+    rgba(255, 81, 126, 0.55)
+  );
+  background-size: 300% 300%;
+  animation: rainbowFlow 2.8s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes rainbowFlow {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 300% 50%; }
+}
+
 @keyframes bombGlow {
   from { filter: brightness(1); }
   to { filter: brightness(1.18); }

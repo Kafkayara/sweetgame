@@ -146,7 +146,7 @@ function createCandyLabel(row: number, column: number, candy: Candy | null): str
   if (candy.special === 'color-bomb') return `${position}, bom warna`
   if (candy.special === 'striped-horizontal') return `${position}, permen bergaris horizontal`
   if (candy.special === 'striped-vertical') return `${position}, permen bergaris vertikal`
-  if (candy.special === 'wrapped') return `${position}, permen bungkus`
+  if (candy.special === 'wrapped') return `${position}, bom area 3x3`
   return `${position}, warna ${PASTEL_CANDIES[candy.type]?.name ?? candy.type}`
 }
 
@@ -537,22 +537,22 @@ export default function SweetGridGame() {
     return res
   }
 
-  const longestConsecutiveRun = (numbers: number[]): number[] => {
+  const getConsecutiveRuns = (numbers: number[]): number[][] => {
     const sorted = [...numbers].sort((a, b) => a - b)
-    let best: number[] = []
+    const runs: number[][] = []
     let current: number[] = []
 
     for (const num of sorted) {
-      const prev = current[current.length - 1]
-      if (current.length === 0 || num === prev + 1) {
+      const previous = current[current.length - 1]
+      if (current.length === 0 || num === previous + 1) {
         current.push(num)
       } else {
-        if (current.length > best.length) best = current
+        if (current.length >= 3) runs.push(current)
         current = [num]
       }
     }
-    if (current.length > best.length) best = current
-    return best
+    if (current.length >= 3) runs.push(current)
+    return runs
   }
 
   const findMatchGroups = (b: (Candy | null)[][]) => {
@@ -560,6 +560,8 @@ export default function SweetGridGame() {
       cells: Set<string>
       horizontal: string[]
       vertical: string[]
+      horizontalRuns: string[][]
+      verticalRuns: string[][]
       type: number
     }[] = []
     const visited = new Set<string>()
@@ -612,26 +614,34 @@ export default function SweetGridGame() {
           rowsByColumn.get(c)!.push(r)
         }
 
-        let bestHorizontal: string[] = []
+        const horizontalRuns: string[][] = []
         for (const [r, columns] of columnsByRow) {
-          const run = longestConsecutiveRun(columns)
-          if (run.length > bestHorizontal.length) {
-            bestHorizontal = run.map(c => `${r},${c}`)
+          for (const run of getConsecutiveRuns(columns)) {
+            horizontalRuns.push(run.map(c => `${r},${c}`))
           }
         }
 
-        let bestVertical: string[] = []
+        const verticalRuns: string[][] = []
         for (const [c, rows] of rowsByColumn) {
-          const run = longestConsecutiveRun(rows)
-          if (run.length > bestVertical.length) {
-            bestVertical = run.map(r => `${r},${c}`)
+          for (const run of getConsecutiveRuns(rows)) {
+            verticalRuns.push(run.map(r => `${r},${c}`))
           }
         }
 
         groups.push({
           cells: componentCells,
-          horizontal: bestHorizontal,
-          vertical: bestVertical,
+          horizontal:
+            horizontalRuns.reduce(
+              (longest, run) => (run.length > longest.length ? run : longest),
+              [] as string[]
+            ),
+          vertical:
+            verticalRuns.reduce(
+              (longest, run) => (run.length > longest.length ? run : longest),
+              [] as string[]
+            ),
+          horizontalRuns,
+          verticalRuns,
           type: candy.type,
         })
       }
@@ -712,31 +722,34 @@ export default function SweetGridGame() {
     const creates: { row: number; column: number; special: SpecialType; type: number }[] = []
 
     for (const group of groups) {
-      const size = group.cells.size
-      const hasHorizontal = group.horizontal.length >= 3
-      const hasVertical = group.vertical.length >= 3
+      const longestFiveRun = [...group.horizontalRuns, ...group.verticalRuns]
+        .filter(run => run.length >= 5)
+        .sort((first, second) => second.length - first.length)[0]
 
-      if (hasHorizontal && hasVertical) {
-        const posStr = chooseSpecialPosition(group.cells, swapFirst, swapSecond)
+      if (longestFiveRun) {
+        const posStr = longestFiveRun[Math.floor((longestFiveRun.length - 1) / 2)]
         const [row, column] = posStr.split(',').map(Number)
+        creates.push({
+          row,
+          column,
+          special: 'color-bomb',
+          type: -1,
+        })
+        continue
+      }
+
+      const intersection = group.horizontalRuns
+        .flatMap(run => run)
+        .find(cell => group.verticalRuns.some(run => run.includes(cell)))
+
+      if (intersection) {
+        const [row, column] = intersection.split(',').map(Number)
         const candy = currentBoard[row]?.[column]
         creates.push({
           row,
           column,
           special: 'wrapped',
           type: candy?.type ?? group.type,
-        })
-        continue
-      }
-
-      if (size >= 5) {
-        const posStr = chooseSpecialPosition(group.cells, swapFirst, swapSecond)
-        const [row, column] = posStr.split(',').map(Number)
-        creates.push({
-          row,
-          column,
-          special: 'color-bomb',
-          type: -1, // type-agnostic
         })
         continue
       }
@@ -983,6 +996,7 @@ export default function SweetGridGame() {
         }
       }
     } else if (comboType === 'color-normal') {
+      spawnBoardFlash()
       const normalPos =
         currentBoard[first.row][first.column]?.special === 'color-bomb' ? second : first
       const targetType = currentBoard[normalPos.row][normalPos.column]?.type
@@ -997,7 +1011,11 @@ export default function SweetGridGame() {
       }
       cells.add(`${first.row},${first.column}`)
       cells.add(`${second.row},${second.column}`)
+      const expanded = expandSpecialEffects(cells, currentBoard)
+      cells.clear()
+      expanded.forEach(cell => cells.add(cell))
     } else if (comboType === 'color-special') {
+      spawnBoardFlash()
       const specialPos =
         currentBoard[first.row][first.column]?.special === 'color-bomb' ? second : first
       const bombPos = specialPos === second ? first : second
@@ -1016,6 +1034,9 @@ export default function SweetGridGame() {
         }
       }
       cells.add(`${bombPos.row},${bombPos.column}`)
+      const expanded = expandSpecialEffects(cells, currentBoard)
+      cells.clear()
+      expanded.forEach(cell => cells.add(cell))
     } else if (comboType === 'striped-striped') {
       for (let cur = 0; cur < BOARD_SIZE; cur++) {
         cells.add(`${first.row},${cur}`)
@@ -1544,21 +1565,38 @@ export default function SweetGridGame() {
                 let specialOverlay = null
                 if (candyData.special === 'color-bomb') {
                   specialOverlay = (
-                    <div className="absolute inset-0 rounded-xl bg-gradient-to-tr from-amber-500 via-rose-500 to-sky-500 animate-pulse flex items-center justify-center">
-                      <div className="w-2.5 h-2.5 rounded-full bg-white shadow-lg animate-ping" />
+                    <div className="candy-color-bomb-overlay absolute inset-0 rounded-xl flex items-center justify-center">
+                      <span className="relative z-10 text-2xl leading-none drop-shadow-[0_0_7px_rgba(255,255,255,0.95)] animate-pulse">
+                        🌟
+                      </span>
                     </div>
                   )
                 } else if (candyData.special === 'striped-horizontal') {
                   specialOverlay = (
-                    <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-1 bg-white/70 shadow-sm pointer-events-none" />
+                    <>
+                      <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-1 bg-white/70 shadow-sm pointer-events-none" />
+                      <span className="absolute inset-0 flex items-center justify-center text-lg leading-none text-white drop-shadow-[0_0_6px_rgba(255,255,255,0.95)] animate-pulse pointer-events-none">
+                        ↔️
+                      </span>
+                    </>
                   )
                 } else if (candyData.special === 'striped-vertical') {
                   specialOverlay = (
-                    <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-1 bg-white/70 shadow-sm pointer-events-none" />
+                    <>
+                      <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-1 bg-white/70 shadow-sm pointer-events-none" />
+                      <span className="absolute inset-0 flex items-center justify-center text-lg leading-none text-white drop-shadow-[0_0_6px_rgba(255,255,255,0.95)] animate-pulse pointer-events-none">
+                        ↕️
+                      </span>
+                    </>
                   )
                 } else if (candyData.special === 'wrapped') {
                   specialOverlay = (
-                    <div className="absolute inset-1 border-2 border-white/80 rounded-lg pointer-events-none" />
+                    <>
+                      <div className="absolute inset-1 border-2 border-white/80 rounded-lg pointer-events-none" />
+                      <span className="absolute inset-0 flex items-center justify-center text-xl leading-none drop-shadow-[0_0_6px_rgba(255,255,255,0.95)] animate-pulse pointer-events-none">
+                        💣
+                      </span>
+                    </>
                   )
                 }
 

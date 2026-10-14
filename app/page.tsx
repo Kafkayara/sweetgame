@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { useGameAudio } from './use-game-audio'
 
 // ============================================================================
 // KONSTANTA & TIPE DATA
@@ -246,6 +247,7 @@ export default function SweetGridGame() {
   const [message, setMessage] = useState<string>('Pilih atau drag dua permen yang bersebelahan.')
   const [gameOver, setGameOver] = useState<boolean>(false)
   const [gameWon, setGameWon] = useState<boolean>(false)
+  const { isMuted, playSound, toggleMuted } = useGameAudio()
 
   // Board state: 8x8 matrix
   const [board, setBoard] = useState<(Candy | null)[][]>([])
@@ -1073,6 +1075,7 @@ export default function SweetGridGame() {
     setScore(s => s + specialGained)
     showScorePopup(specialGained, cells)
 
+    playSound('explode')
     triggerPopVisuals(cells, currentBoard)
     await wait(POP_DELAY)
 
@@ -1130,9 +1133,16 @@ export default function SweetGridGame() {
 
       const comboMultiplier = 1 + (combo - 1) * 0.5
       const gained = Math.round(expanded.size * SCORE_PER_CANDY * comboMultiplier)
+      const detonatesSpecial = [...expanded].some(position => {
+        const [row, column] = position.split(',').map(Number)
+        return Boolean(curBoard[row]?.[column]?.special)
+      })
 
       setScore(s => s + gained)
       setMessage(combo > 1 ? `COMBO x${combo}` : `Match! +${gained}`)
+
+      playSound('pop', { playbackRate: Math.min(1 + (combo - 1) * 0.08, 1.32) })
+      if (detonatesSpecial) playSound('explode')
 
       if (combo > 1) {
         showComboPopup(combo)
@@ -1196,6 +1206,7 @@ export default function SweetGridGame() {
     const currentMode = gameModeRef.current
 
     if (currentMode === 'target' && currentScore >= TARGET_SCORE) {
+      playSound('win')
       setGameWon(true)
       setGameOver(true)
       gameLockedRef.current = true
@@ -1269,6 +1280,7 @@ export default function SweetGridGame() {
     // 2. Cek kombinasi spesial
     const specialCombo = getSpecialCombination(first, second, swapped)
     if (specialCombo) {
+      playSound('swap')
       setMoves(m => m - 1)
       const afterCombo = await resolveSpecialCombination(first, second, specialCombo, swapped)
       finishMove(afterCombo)
@@ -1295,6 +1307,7 @@ export default function SweetGridGame() {
     }
 
     // 4. Match valid! Kurangi langkah dan selesaikan reaksi berantai
+    playSound('swap')
     setMoves(m => m - 1)
     const afterMatches = await resolveMatchesLoop(matches, first, second, swapped)
     finishMove(afterMatches)
@@ -1495,7 +1508,7 @@ export default function SweetGridGame() {
       {/* GAME STATS (Grid 3 Kolom Rapi)                                   */}
       {/* ================================================================= */}
       <section
-        className="stats grid grid-cols-3 gap-2.5 mb-3"
+        className="stats grid grid-cols-[repeat(3,minmax(0,1fr))_auto] gap-2.5 mb-3"
         aria-label="Informasi permainan"
       >
         <div className="stat-card flex flex-col items-center justify-center p-2.5 bg-slate-900/90 border border-slate-800 rounded-xl shadow-md">
@@ -1524,6 +1537,45 @@ export default function SweetGridGame() {
             {gameMode === 'unlimited' ? '∞' : TARGET_SCORE}
           </strong>
         </div>
+
+        <button
+          className="flex h-full min-h-12 w-12 items-center justify-center self-stretch rounded-xl border border-slate-800 bg-slate-900/90 text-slate-300 shadow-md transition-colors hover:border-amber-300/50 hover:text-amber-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300"
+          type="button"
+          aria-label={isMuted ? 'Nyalakan suara' : 'Matikan suara'}
+          aria-pressed={isMuted}
+          title={isMuted ? 'Nyalakan suara' : 'Matikan suara'}
+          onClick={toggleMuted}
+        >
+          {isMuted ? (
+            <svg
+              aria-hidden="true"
+              className="h-5 w-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M11 5 6 9H3v6h3l5 4V5Z" />
+              <path d="m17 9 5 6m0-6-5 6" />
+            </svg>
+          ) : (
+            <svg
+              aria-hidden="true"
+              className="h-5 w-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M11 5 6 9H3v6h3l5 4V5Z" />
+              <path d="M15.5 8.5a5 5 0 0 1 0 7m3-10a9 9 0 0 1 0 13" />
+            </svg>
+          )}
+        </button>
       </section>
 
       {/* ================================================================= */}

@@ -11,7 +11,12 @@ const BOARD_SIZE = 8
 const CANDY_TYPES = 6
 
 const STARTING_MOVES = 30
-const TARGET_SCORE = 1000
+const LEVELS = [
+  { name: 'Kebun Gula', target: 1000, moves: 30 },
+  { name: 'Sungai Karamel', target: 1600, moves: 28 },
+  { name: 'Bukit Marshmallow', target: 2200, moves: 26 },
+  { name: 'Istana Permen', target: 3000, moves: 24 },
+]
 const SCORE_PER_CANDY = 10
 
 const POP_DELAY = 220
@@ -199,8 +204,12 @@ function computeFallOffsets(boardState: (Candy | null)[][]): number[][] {
 function VictoryModal({
   score,
   onRestart,
+  won,
+  onNext,
 }: {
   score: number
+  won: boolean
+  onNext?: () => void
   onRestart: () => void
 }) {
   return (
@@ -216,7 +225,7 @@ function VictoryModal({
           SWEET GRID
         </p>
         <h2 id="overlayTitle" className="text-3xl font-black text-white">
-          Target Tercapai!
+          {won ? 'Manis! Level selesai!' : 'Langkah habis'}
         </h2>
         <div className="my-6 rounded-2xl border border-slate-700 bg-slate-900/80 px-6 py-4">
           <span className="block text-xs font-extrabold tracking-widest text-slate-400">
@@ -232,14 +241,22 @@ function VictoryModal({
           type="button"
           onClick={onRestart}
         >
-          Main Lagi
+          {won ? 'Main Lagi' : 'Coba Lagi'}
         </button>
+        {won && onNext && <button type="button" onClick={onNext} className="mt-3 w-full rounded-xl bg-pink-500 px-5 py-3 font-extrabold text-white">Level Berikutnya ?</button>}
+        {won && !onNext && <p className="mt-4 text-sm text-amber-200">Semua level selesai. Hebat!</p>}
       </div>
     </section>
   )
 }
 
 export default function SweetGridGame() {
+  const [level, setLevel] = useState(0)
+  const levelRef = useRef(0)
+  const [busy, setBusy] = useState(false)
+  const levelConfig = LEVELS[level]
+  const touchStartRef = useRef<{ row: number; column: number; x: number; y: number } | null>(null)
+  const suppressClickRef = useRef(false)
   // Game mode & stats
   const [gameMode, setGameMode] = useState<'target' | 'unlimited'>('target')
   const [score, setScore] = useState<number>(0)
@@ -1072,7 +1089,8 @@ export default function SweetGridGame() {
     }
 
     const specialGained = cells.size * SCORE_PER_CANDY * 2
-    setScore(s => s + specialGained)
+    scoreRef.current += specialGained
+    setScore(scoreRef.current)
     showScorePopup(specialGained, cells)
 
     playSound('explode')
@@ -1138,7 +1156,8 @@ export default function SweetGridGame() {
         return Boolean(curBoard[row]?.[column]?.special)
       })
 
-      setScore(s => s + gained)
+      scoreRef.current += gained
+      setScore(scoreRef.current)
       setMessage(combo > 1 ? `COMBO x${combo}` : `Match! +${gained}`)
 
       playSound('pop', { playbackRate: Math.min(1 + (combo - 1) * 0.08, 1.32) })
@@ -1200,12 +1219,13 @@ export default function SweetGridGame() {
 
   const finishMove = (finalBoard: (Candy | null)[][]) => {
     setSelectedCandy(null)
+    setBusy(false)
 
     const currentScore = scoreRef.current
     const currentMoves = movesRef.current
     const currentMode = gameModeRef.current
 
-    if (currentMode === 'target' && currentScore >= TARGET_SCORE) {
+    if (currentMode === 'target' && currentScore >= LEVELS[levelRef.current].target) {
       playSound('win')
       setGameWon(true)
       setGameOver(true)
@@ -1214,7 +1234,7 @@ export default function SweetGridGame() {
       return
     }
 
-    if (currentMoves <= 0) {
+    if (currentMode === 'target' && currentMoves <= 0) {
       setGameWon(false)
       setGameOver(true)
       gameLockedRef.current = true
@@ -1245,6 +1265,9 @@ export default function SweetGridGame() {
         attempts < 100
       )
 
+      if (findMatchesOnBoard(shuffled).size > 0 || !hasPossibleMoveOnBoard(shuffled)) {
+        shuffled = generateInitialBoard()
+      }
       setBoard(shuffled)
       boardRef.current = shuffled
       gameLockedRef.current = false
@@ -1264,6 +1287,7 @@ export default function SweetGridGame() {
   const performMove = async (first: Pos, second: Pos) => {
     if (gameLockedRef.current || gameOverRef.current) return
     gameLockedRef.current = true
+    setBusy(true)
     clearHint()
 
     // 1. Swap sementara di state & ref
@@ -1281,7 +1305,10 @@ export default function SweetGridGame() {
     const specialCombo = getSpecialCombination(first, second, swapped)
     if (specialCombo) {
       playSound('swap')
-      setMoves(m => m - 1)
+      if (gameModeRef.current === 'target') {
+        movesRef.current -= 1
+        setMoves(movesRef.current)
+      }
       const afterCombo = await resolveSpecialCombination(first, second, specialCombo, swapped)
       finishMove(afterCombo)
       return
@@ -1302,13 +1329,17 @@ export default function SweetGridGame() {
 
       await wait(180)
       gameLockedRef.current = false
+      setBusy(false)
       startHintTimer()
       return
     }
 
     // 4. Match valid! Kurangi langkah dan selesaikan reaksi berantai
     playSound('swap')
-    setMoves(m => m - 1)
+    if (gameModeRef.current === 'target') {
+      movesRef.current -= 1
+      setMoves(movesRef.current)
+    }
     const afterMatches = await resolveMatchesLoop(matches, first, second, swapped)
     finishMove(afterMatches)
   }
@@ -1318,7 +1349,8 @@ export default function SweetGridGame() {
   // ==========================================================================
 
   const handleCandyClick = (r: number, c: number) => {
-    if (gameLockedRef.current || gameOverRef.current || movesRef.current <= 0) return
+    if (suppressClickRef.current) { suppressClickRef.current = false; return }
+    if (gameLockedRef.current || gameOverRef.current) return
     clearHint()
 
     if (!selectedCandy) {
@@ -1397,10 +1429,15 @@ export default function SweetGridGame() {
   // RESTART & GAME CONTROLS
   // ==========================================================================
 
-  const restartGame = useCallback(() => {
+  const restartGame = useCallback((nextLevel = levelRef.current) => {
+    levelRef.current = nextLevel
+    setLevel(nextLevel)
+    setBusy(false)
+    scoreRef.current = 0
+    movesRef.current = LEVELS[nextLevel].moves
     clearHint()
     setScore(0)
-    setMoves(STARTING_MOVES)
+    setMoves(LEVELS[nextLevel].moves)
     setSelectedCandy(null)
     setGameOver(false)
     setGameWon(false)
@@ -1418,6 +1455,8 @@ export default function SweetGridGame() {
 
   const changeGameMode = (mode: 'target' | 'unlimited') => {
     if (gameMode === mode) return
+    if (gameLockedRef.current && !gameOverRef.current) return
+    gameModeRef.current = mode
     setGameMode(mode)
     restartGame()
   }
@@ -1460,7 +1499,8 @@ export default function SweetGridGame() {
             type="button"
             aria-label="Mulai ulang permainan"
             title="Mulai ulang"
-            onClick={restartGame}
+            disabled={busy}
+            onClick={() => restartGame()}
           >
             <span aria-hidden="true">↻</span>
           </button>
@@ -1484,6 +1524,7 @@ export default function SweetGridGame() {
           }`}
           type="button"
           aria-pressed={gameMode === 'target'}
+          disabled={busy}
           onClick={() => changeGameMode('target')}
         >
           Target Skor
@@ -1498,6 +1539,7 @@ export default function SweetGridGame() {
           }`}
           type="button"
           aria-pressed={gameMode === 'unlimited'}
+          disabled={busy}
           onClick={() => changeGameMode('unlimited')}
         >
           Tanpa Batas
@@ -1525,7 +1567,7 @@ export default function SweetGridGame() {
             LANGKAH
           </span>
           <strong id="moves" className="text-xl sm:text-2xl font-black text-white mt-0.5">
-            {moves}
+            {gameMode === 'unlimited' ? '?' : moves}
           </strong>
         </div>
 
@@ -1534,7 +1576,7 @@ export default function SweetGridGame() {
             TARGET
           </span>
           <strong id="target" className="text-xl sm:text-2xl font-black text-white mt-0.5">
-            {gameMode === 'unlimited' ? '∞' : TARGET_SCORE}
+            {gameMode === 'unlimited' ? '∞' : levelConfig.target}
           </strong>
         </div>
 
@@ -1581,6 +1623,14 @@ export default function SweetGridGame() {
       {/* ================================================================= */}
       {/* GAME AREA                                                         */}
       {/* ================================================================= */}
+      <section className="level-progress" aria-label="Progres level">
+        <div className="flex items-center justify-between gap-3">
+          <span>{gameMode === 'target' ? `Level ${level + 1} ? ${levelConfig.name}` : 'Mode santai ? Tanpa batas'}</span>
+          <span>{gameMode === 'target' ? `${Math.min(100, Math.floor(score / levelConfig.target * 100))}%` : `${score} poin`}</span>
+        </div>
+        {gameMode === 'target' && <progress value={Math.min(score, levelConfig.target)} max={levelConfig.target} aria-label="Target skor" />}
+        <p>{message}</p>
+      </section>
       <section className="game-area relative flex justify-center" aria-label="Area permainan">
         <div
           ref={boardContainerRef}
@@ -1663,6 +1713,30 @@ export default function SweetGridGame() {
                     aria-rowindex={r + 1}
                     aria-colindex={c + 1}
                     draggable={true}
+                    aria-selected={isSelected}
+                    onTouchStart={e => {
+                      if (gameLockedRef.current || gameOverRef.current) return
+                      suppressClickRef.current = false
+                      const touch = e.touches[0]
+                      touchStartRef.current = { row: r, column: c, x: touch.clientX, y: touch.clientY }
+                    }}
+                    onTouchCancel={() => { touchStartRef.current = null }}
+                    onTouchEnd={e => {
+                      const start = touchStartRef.current
+                      touchStartRef.current = null
+                      if (!start) return
+                      const touch = e.changedTouches[0]
+                      const dx = touch.clientX - start.x
+                      const dy = touch.clientY - start.y
+                      if (Math.max(Math.abs(dx), Math.abs(dy)) < 20) return
+                      e.preventDefault()
+                      suppressClickRef.current = true
+                      const to = { row: start.row + (Math.abs(dy) > Math.abs(dx) ? Math.sign(dy) : 0), column: start.column + (Math.abs(dx) >= Math.abs(dy) ? Math.sign(dx) : 0) }
+                      if (to.row >= 0 && to.row < BOARD_SIZE && to.column >= 0 && to.column < BOARD_SIZE) {
+                        setSelectedCandy(null)
+                        void performMove(start, to)
+                      }
+                    }}
                     onDragStart={() => handleDragStart(r, c)}
                     onDragOver={e => handleDragOver(e, r, c)}
                     onDragEnter={() => handleDragEnter(r, c)}
@@ -1671,7 +1745,7 @@ export default function SweetGridGame() {
                     onDragEnd={handleDragEnd}
                     onClick={() => handleCandyClick(r, c)}
                     className={[
-                      'relative w-full h-full cursor-pointer hover:scale-95 transition-transform',
+                      `sweet-piece sweet-shape-${candyData.special === 'color-bomb' ? 'bomb' : candyData.type} relative w-full h-full cursor-pointer hover:scale-95 transition-transform`,
                       'rounded-xl shadow-sm border-b-4',
                       pastel.bg,
                       pastel.border,
@@ -1714,7 +1788,7 @@ export default function SweetGridGame() {
         {message}
       </div>
 
-      {gameWon && <VictoryModal score={score} onRestart={restartGame} />}
+      {gameOver && <VictoryModal score={score} won={gameWon} onRestart={() => restartGame()} onNext={level < LEVELS.length - 1 ? () => restartGame(level + 1) : undefined} />}
     </main>
   )
 }

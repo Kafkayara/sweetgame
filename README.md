@@ -22,7 +22,7 @@ This project uses [`next/font`](https://nextjs.org/docs/app/building-your-applic
 
 ## Audio effects
 
-Place `swap.mp3`, `pop.mp3`, `explode.mp3`, and `win.mp3` in `public/sounds/` to enable gameplay sound effects. The speaker button beside the score controls mute; missing or unavailable sound files do not interrupt gameplay.
+Efek swap, match/pop, ledakan, dan kemenangan dibuat langsung dengan Web Audio API, tanpa file MP3. Suara aktif setelah interaksi pertama pada papan. Tombol speaker mengaktifkan atau mematikan suara; combo bertingkat menaikkan nada pop.
 
 ## Learn More
 
@@ -46,7 +46,7 @@ Tahap 1 menambahkan empat level berurutan dengan target skor dan jatah langkah y
 Struktur kode:
 - `app/page.tsx`: papan 8x8, deteksi match, pembentukan dan kombinasi permen spesial, cascade, hint, level, dan tampilan permainan.
 - `app/globals.css`: tampilan permen, partikel, animasi, dan indikator level.
-- `app/use-game-audio.ts`: efek suara dan mute; berkas audio belum disertakan.
+- `app/use-game-audio.ts`: efek suara sintetis dan mute.
 
 Progres level saat ini berlaku selama sesi bermain dan kembali ke level 1 setelah reload.
 

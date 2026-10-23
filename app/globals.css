@@ -504,3 +504,30 @@ button:disabled { cursor: wait; opacity: .55; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
+
+/* Match feedback applies to the rendered pieces as well as legacy candy styles. */
+.sweet-piece.pop { animation: popCandy 220ms cubic-bezier(.2,.8,.3,1) forwards; }
+.sweet-piece.special-born { animation: specialBirth 450ms ease-out; }
+
+/* Keep the chosen candy unmistakable until it is deselected or swapped. */
+.sweet-piece[aria-selected="true"] {
+  z-index: 20;
+  outline: 2px solid #fffef0;
+  outline-offset: 2px;
+  filter: brightness(1.2) saturate(1.15);
+  box-shadow:
+    inset 0 0 12px #ffffff80,
+    0 0 0 3px #fcd34d,
+    0 0 16px 5px #fcd34db3,
+    0 0 28px 8px #fff5;
+  animation: selectedCandyGlow 900ms ease-in-out infinite alternate;
+}
+
+@keyframes selectedCandyGlow {
+  from { box-shadow: inset 0 0 10px #ffffff70, 0 0 0 3px #fcd34d, 0 0 12px 3px #fcd34d99, 0 0 22px 5px #fff3; }
+  to { box-shadow: inset 0 0 14px #ffffff90, 0 0 0 3px #ffe58a, 0 0 19px 6px #fcd34dcc, 0 0 30px 9px #fff5; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sweet-piece[aria-selected="true"] { animation: none; }
+}

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import { useGameAudio } from './use-game-audio'
 
 // ============================================================================
@@ -304,6 +304,36 @@ export default function SweetGridGame() {
   // DOM ref untuk particle layer & board container
   const boardContainerRef = useRef<HTMLDivElement | null>(null)
   const particleLayerRef = useRef<HTMLDivElement | null>(null)
+
+  const previousPositionsRef = useRef(new Map<string, { x: number; y: number }>())
+
+  // Animate actual layout displacement, including survivors falling across rows.
+  useLayoutEffect(() => {
+    const container = boardContainerRef.current
+    if (!container) return
+    const elements = container.querySelectorAll<HTMLElement>('[data-candy-id]')
+    const previous = previousPositionsRef.current
+    const next = new Map<string, { x: number; y: number }>()
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    elements.forEach(element => {
+      const id = element.dataset.candyId!
+      const position = { x: element.offsetLeft, y: element.offsetTop }
+      next.set(id, position)
+      if (!previous.size || reducedMotion) return
+      const old = previous.get(id)
+      const dx = old ? old.x - position.x : 0
+      const dy = old ? old.y - position.y : -position.y - element.offsetHeight
+      if (!dx && !dy) return
+      element.animate([
+        { transform: `translate(${dx}px, ${dy}px)`, opacity: old ? 1 : 0.4 },
+        { transform: 'translate(0, 0)', opacity: 1 },
+      ], {
+        duration: old && dx !== 0 || old && Math.abs(dy) <= element.offsetHeight + 10 ? 180 : 400,
+        easing: old ? 'cubic-bezier(0.22, 0.68, 0.25, 1)' : 'cubic-bezier(0.32, 0, 0.55, 1)',
+      })
+    })
+    previousPositionsRef.current = next
+  }, [board])
 
   // Sinkronisasi refs
   useEffect(() => {
@@ -1299,12 +1329,12 @@ export default function SweetGridGame() {
     setBoard(swapped)
     boardRef.current = swapped
 
+    playSound('swap')
     await wait(180) // Durasi animasi swap
 
     // 2. Cek kombinasi spesial
     const specialCombo = getSpecialCombination(first, second, swapped)
     if (specialCombo) {
-      playSound('swap')
       if (gameModeRef.current === 'target') {
         movesRef.current -= 1
         setMoves(movesRef.current)
@@ -1335,7 +1365,6 @@ export default function SweetGridGame() {
     }
 
     // 4. Match valid! Kurangi langkah dan selesaikan reaksi berantai
-    playSound('swap')
     if (gameModeRef.current === 'target') {
       movesRef.current -= 1
       setMoves(movesRef.current)
@@ -1442,6 +1471,7 @@ export default function SweetGridGame() {
     setGameOver(false)
     setGameWon(false)
     setPoppingCells(new Set())
+    previousPositionsRef.current.clear()
     gameLockedRef.current = false
     gameOverRef.current = false
 
@@ -1646,7 +1676,7 @@ export default function SweetGridGame() {
             aria-rowcount={8}
             aria-colcount={8}
           >
-            {board.map((row, r) =>
+            {board.flatMap((row, r) =>
               row.map((candyData, c) => {
                 if (!candyData) {
                   return (
@@ -1702,12 +1732,12 @@ export default function SweetGridGame() {
                   )
                 }
 
-                const isLanding = landingCandies.has(`${r},${c}`)
 
                 return (
                   <button
                     key={candyData.id}
                     data-cell={`${r}-${c}`}
+                    data-candy-id={candyData.id}
                     type="button"
                     role="gridcell"
                     aria-rowindex={r + 1}
@@ -1752,7 +1782,7 @@ export default function SweetGridGame() {
                       isSelected ? 'ring-4 ring-white scale-90 z-20' : '',
                       isHint ? 'ring-2 ring-amber-300 animate-bounce' : '',
                       isPopping ? 'pop' : '',
-                      isLanding ? 'candy-land' : '',
+
                       isDragOver ? 'brightness-125 scale-105 z-10' : '',
                       candyData.justCreated ? 'special-born' : '',
                     ]

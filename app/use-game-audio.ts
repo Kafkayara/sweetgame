@@ -18,6 +18,15 @@ export function useGameAudio() {
     voicesRef.current.clear()
   }, [])
 
+  const unlockAudio = useCallback(() => {
+    if (typeof window === 'undefined' || !window.AudioContext) return
+    try {
+      const context = contextRef.current ?? new AudioContext()
+      contextRef.current = context
+      if (context.state === 'suspended') void context.resume().catch(() => {})
+    } catch { /* Audio support is optional. */ }
+  }, [])
+
   const playSound = useCallback((sound: SoundEffect, options: PlaySoundOptions = {}) => {
     if (isMutedRef.current || typeof window === 'undefined' || !window.AudioContext) return
     try {
@@ -69,5 +78,5 @@ export function useGameAudio() {
     }
   }, [])
 
-  return { isMuted, playSound, toggleMuted }
+  return { isMuted, playSound, toggleMuted, unlockAudio }
 }

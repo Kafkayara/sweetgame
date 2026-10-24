@@ -506,7 +506,7 @@ button:disabled { cursor: wait; opacity: .55; }
 }
 
 /* Match feedback applies to the rendered pieces as well as legacy candy styles. */
-.sweet-piece.pop { animation: popCandy 220ms cubic-bezier(.2,.8,.3,1) forwards; }
+/* Pop completion is now owned by the render-synchronized animation controller. */
 .sweet-piece.special-born { animation: specialBirth 450ms ease-out; }
 
 /* Keep the chosen candy unmistakable until it is deselected or swapped. */
@@ -531,3 +531,8 @@ button:disabled { cursor: wait; opacity: .55; }
 @media (prefers-reduced-motion: reduce) {
   .sweet-piece[aria-selected="true"] { animation: none; }
 }
+
+/* Translation lives on a separate wrapper so hover, selection and pop never override gravity. */
+.candy-motion { min-width: 0; min-height: 0; }
+.candy-motion:has([aria-selected="true"]), .candy-motion:focus-within { z-index: 20; }
+.board[aria-busy="true"] .sweet-piece { pointer-events: none; }

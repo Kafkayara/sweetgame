@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { planCandyMotion, afterAnimations, createBrowserFrameClock } from '../app/game/motion.ts'
+import { planCandyMotion, afterAnimations, createBrowserFrameClock, animateLanding } from '../app/game/motion.ts'
 import type { CandyPosition } from '../app/game/motion.ts'
 
 const position = (y: number, column = 0): CandyPosition => ({ x: column * 50, y, height: 44, column })
@@ -94,4 +94,39 @@ test('cleanup after a completed frame does not cancel a stale frame ID', async (
   frames.tick()
   cancel()
   assert.equal(cancelled, 0)
+})
+
+test('landing squish starts after travel and holds the cascade barrier until recovery', async () => {
+  const travel = deferred(), impact = deferred(), frames = clock()
+  let capturedFrames: Keyframe[] = []
+  let capturedOptions: KeyframeAnimationOptions = {}
+  const candy = {
+    animate(keyframes: Keyframe[] | PropertyIndexedKeyframes | null, options?: number | KeyframeAnimationOptions) {
+      capturedFrames = keyframes as Keyframe[]
+      capturedOptions = options as KeyframeAnimationOptions
+      return impact as unknown as Animation
+    },
+  }
+  const landing = animateLanding(candy, { id: 'candy', dx: 0, dy: -150, entering: false }, 'falling', 390)
+  assert.ok(landing)
+  assert.equal(capturedOptions.delay, 390)
+  assert.equal(capturedOptions.duration, 170)
+  assert.equal(capturedFrames[1].transform, 'scale(1.16, 0.74)')
+  assert.equal(capturedFrames.at(-1)!.transform, 'scale(1, 1)')
+  assert.ok(capturedFrames.every(frame => frame.transformOrigin === '50% 100%'))
+  let advances = 0
+  afterAnimations([travel, landing], () => { advances++ }, frames)
+  travel.resolve(); await Promise.resolve(); await Promise.resolve(); frames.tick()
+  assert.equal(advances, 0)
+  impact.resolve(); await Promise.resolve(); await Promise.resolve(); frames.tick()
+  assert.equal(advances, 1)
+})
+
+test('swaps, stationary candies, and upward motion do not trigger landing squish', () => {
+  const candy = { animate: () => { throw new Error('unexpected landing') } }
+  const motion = { id: 'candy', dx: 0, dy: -50, entering: true }
+  assert.equal(animateLanding(candy, motion, 'swapping', 180), null)
+  assert.equal(animateLanding(candy, { ...motion, dy: 0 }, 'falling', 350), null)
+  assert.equal(animateLanding(candy, { ...motion, dy: 50 }, 'falling', 350), null)
+  assert.equal(animateLanding(candy, { ...motion, dx: 50 }, 'falling', 350), null)
 })

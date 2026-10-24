@@ -75,3 +75,13 @@ Reducer memproses input secara atomik dan menolak swap saat sibuk. Setiap reset 
 Tahap berikutnya menunggu semua `Animation.finished` dan satu `requestAnimationFrame`. Cleanup membatalkan animasi dan frame yang tertunda saat restart, unmount, atau pengulangan efek oleh React Strict Mode. Mode reduced motion tetap melewati pembatas render yang sama, tanpa menjalankan animasi.
 
 Animasi mengikuti refresh browser dan dirancang untuk target 60 FPS; frame rate nyata tetap bergantung pada perangkat dan beban browser, sehingga harus diprofilkan pada perangkat sasaran.
+
+
+## Game feel
+
+- Permen yang cocok tetap berada di papan sampai ledakan CSS selesai: 8 pecahan berwarna, 4 percikan, dan cincin mengembang. Partikel berada di samping elemen permen yang mengecil, sehingga menyebar secara mandiri sebelum gravitasi dimulai.
+- Combo 4? menampilkan `SWEET!`; combo 5? ke atas menampilkan `EPIC!`. Popup di tengah papan memakai bayangan teks 3D, pantulan membesar, lalu memudar dan membersihkan elemennya lewat `animationend`.
+- Permen yang jatuh mengalami squish selama 170 ms setelah mencapai posisi akhir. Kaskade menunggu bentuknya pulih. Swap dan pengacakan tidak memicu squish.
+- Reduced motion menyembunyikan pecahan dan menonaktifkan squish; pemberitahuan combo memakai fade singkat.
+
+Pengaturan visual ada di `app/globals.css` dan `app/game/candy-explosion.tsx`; waktu benturan ada di `app/game/motion.ts`.

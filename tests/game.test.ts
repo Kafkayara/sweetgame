@@ -201,3 +201,15 @@ test('a mode reset during a fall replaces all gameplay fields and rejects the ol
   assert.equal(fresh.gameMode, 'unlimited')
   assert.equal(gameReducer(fresh, { type: 'animation-finished', token: oldToken }), fresh)
 })
+
+test('matched candies stay in the rendered board until the whole explosion finishes', () => {
+  const s = advance(animate(swapping()))
+  assert.equal(s.phase, 'popping')
+  assert.ok(s.poppingCells.size > 0)
+  for (const key of s.poppingCells) {
+    const [row, column] = key.split(',').map(Number)
+    assert.ok(s.board[row][column], 'original candy must stay mounted during its explosion')
+  }
+  assert.equal(planNextTransition(s), null, 'gravity must not run before explosion completion')
+  assert.equal(advance(animate(s), seededRefill()).phase, 'falling')
+})

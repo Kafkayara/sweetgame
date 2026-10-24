@@ -4,7 +4,7 @@ import { useLayoutEffect, useRef } from 'react'
 import type { RefObject, Dispatch } from 'react'
 import type { GameState, GameAction } from './reducer.ts'
 import { isBusy } from './reducer.ts'
-import { planCandyMotion, motionDuration, afterAnimations, createBrowserFrameClock } from './motion.ts'
+import { planCandyMotion, motionDuration, afterAnimations, createBrowserFrameClock, animateLanding } from './motion.ts'
 import type { CandyPosition } from './motion.ts'
 
 export function useGameAnimations(state: GameState, containerRef: RefObject<HTMLDivElement | null>, dispatch: Dispatch<GameAction>) {
@@ -38,6 +38,11 @@ export function useGameAnimations(state: GameState, containerRef: RefObject<HTML
             { transform: 'scale(0.1)', opacity: 0 },
           ], { duration: 220, easing: 'cubic-bezier(.2,.8,.3,1)', fill: 'both' }))
         })
+        // CSS particles outlive the candy's shrink animation. Keep the original cells
+        // mounted until the entire burst finishes, then allow gravity to commit.
+        container.querySelectorAll<HTMLElement>('[data-explosion]').forEach(explosion => {
+          animations.push(...explosion.getAnimations({ subtree: true }))
+        })
       } else {
         const first = elements[0]
         const pitch = first ? first.offsetHeight + parseFloat(getComputedStyle(first.parentElement!).rowGap || '0') : 1
@@ -53,6 +58,9 @@ export function useGameAnimations(state: GameState, containerRef: RefObject<HTML
             duration, fill: 'both',
             easing: phase === 'falling' ? 'cubic-bezier(.32,0,.6,1)' : 'cubic-bezier(.22,.68,.25,1)',
           }))
+          const candy = element.querySelector<HTMLElement>('.sweet-piece')
+          const landing = candy && animateLanding(candy, motion, phase, duration)
+          if (landing) animations.push(landing)
         })
       }
     }

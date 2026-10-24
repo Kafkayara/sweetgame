@@ -26,6 +26,16 @@ export function motionDuration(phase: Phase, motions: CandyMotion[], pitch: numb
   return Math.min(480, 200 + Math.sqrt(distance) * 90)
 }
 
+export function animateLanding(target: Pick<HTMLElement, 'animate'>, motion: CandyMotion, phase: Phase, fallDuration: number): Animation | null {
+  if (phase !== 'falling' || motion.dy >= 0 || motion.dx !== 0) return null
+  return target.animate([
+    { transform: 'scale(1, 1)', transformOrigin: '50% 100%', offset: 0 },
+    { transform: 'scale(1.16, 0.74)', transformOrigin: '50% 100%', offset: 0.28 },
+    { transform: 'scale(0.96, 1.06)', transformOrigin: '50% 100%', offset: 0.64 },
+    { transform: 'scale(1, 1)', transformOrigin: '50% 100%', offset: 1 },
+  ], { delay: fallDuration, duration: 170, easing: 'ease-out' })
+}
+
 interface AnimationHandle { finished: Promise<unknown>; cancel: () => void }
 interface FrameClock { request: (callback: () => void) => number; cancel: (id: number) => void }
 

@@ -6,6 +6,7 @@ import type { Candy, Pos } from './game/engine'
 import { isBusy } from './game/reducer'
 import { useGameController } from './game/use-game-controller'
 import { useGameAnimations } from './game/use-game-animations'
+import { CandyExplosion } from './game/candy-explosion'
 import { useGameAudio } from './use-game-audio'
 
 // ============================================================================
@@ -66,13 +67,6 @@ export const PASTEL_CANDIES: PastelCandyConfig[] = [
 ]
 
 const SHARD_COLORS = PASTEL_CANDIES.map(c => c.shardColor)
-
-const COMBO_LABELS: Record<number, string> = {
-  2: 'Manis!',
-  3: 'Lezat!',
-  4: 'Luar Biasa!',
-}
-const COMBO_LABEL_MAX = 'Fantastis!'
 
 function createCandyLabel(row: number, column: number, candy: Candy | null): string {
   const position = `Permen baris ${row + 1}, kolom ${column + 1}`
@@ -161,76 +155,11 @@ export default function SweetGridGame() {
   // PARTIKEL & VISUAL FEEDBACK
   // ==========================================================================
 
-  const spawnParticle = (
-    className: string,
-    x: number,
-    y: number,
-    tx: number,
-    ty: number,
-    extraStyle?: React.CSSProperties,
-    lifespan = 500,
-    rotationDeg?: number
-  ) => {
-    if (!particleLayerRef.current) return
-    const particle = document.createElement('span')
-    particle.className = className
-    particle.style.left = `${x}px`
-    particle.style.top = `${y}px`
-    particle.style.setProperty('--tx', `${tx}px`)
-    particle.style.setProperty('--ty', `${ty}px`)
-    if (rotationDeg !== undefined) {
-      particle.style.setProperty('--rot', `${rotationDeg}deg`)
-    }
-    if (extraStyle) {
-      Object.assign(particle.style, extraStyle)
-    }
-    particleLayerRef.current.appendChild(particle)
-    setTimeout(() => particle.remove(), lifespan)
-  }
-
   const spawnPopEffect = (candyData: Candy | null, rect: DOMRect, layerRect: DOMRect) => {
     if (!particleLayerRef.current) return
     const centerX = rect.left + rect.width / 2 - layerRect.left
     const centerY = rect.top + rect.height / 2 - layerRect.top
-
     const special = candyData?.special ?? null
-    const color =
-      special === 'color-bomb' ? null : SHARD_COLORS[candyData?.type ?? 0] ?? '#ffffff'
-    const isColorBomb = special === 'color-bomb'
-    const shardCount = isColorBomb ? 10 : 5
-    const sparkCount = isColorBomb ? 8 : 4
-    const burstRadius = isColorBomb ? 34 : 22
-
-    for (let i = 0; i < shardCount; i++) {
-      const angle = (Math.PI * 2 * i) / shardCount + Math.random() * 0.6
-      const distance = burstRadius + Math.random() * 14
-      const shardColor = color ?? SHARD_COLORS[i % SHARD_COLORS.length]
-
-      spawnParticle(
-        'shard',
-        centerX,
-        centerY,
-        Math.cos(angle) * distance,
-        Math.sin(angle) * distance,
-        { background: shardColor } as unknown as React.CSSProperties,
-        500,
-        Math.round(Math.random() * 280 - 140)
-      )
-    }
-
-    for (let i = 0; i < sparkCount; i++) {
-      const angle = Math.random() * Math.PI * 2
-      const distance = 16 + Math.random() * 18
-      spawnParticle(
-        'spark',
-        centerX,
-        centerY,
-        Math.cos(angle) * distance,
-        Math.sin(angle) * distance,
-        undefined,
-        450
-      )
-    }
 
     if (special === 'wrapped') {
       const ring = document.createElement('span')
@@ -294,13 +223,19 @@ export default function SweetGridGame() {
   }
 
   const showComboPopup = (combo: number) => {
-    if (!particleLayerRef.current) return
-    const label = COMBO_LABELS[combo] ?? COMBO_LABEL_MAX
+    const layer = particleLayerRef.current
+    if (!layer || combo <= 3) return
+    layer.querySelector('.combo-popup')?.remove()
     const popup = document.createElement('span')
-    popup.className = 'combo-popup'
-    popup.textContent = label
-    particleLayerRef.current.appendChild(popup)
-    setTimeout(() => popup.remove(), 700)
+    popup.className = `combo-popup ${combo >= 5 ? 'combo-epic' : 'combo-sweet'}`
+    const title = document.createElement('strong')
+    title.textContent = combo >= 5 ? 'EPIC!' : 'SWEET!'
+    const count = document.createElement('small')
+    count.textContent = `COMBO ?${combo}`
+    popup.append(title, count)
+    popup.addEventListener('animationend', () => popup.remove(), { once: true })
+    popup.addEventListener('animationcancel', () => popup.remove(), { once: true })
+    layer.appendChild(popup)
   }
 
   // Visual side effects follow committed reducer steps; they never update game state.
@@ -320,7 +255,7 @@ export default function SweetGridGame() {
     if (state.phase !== 'popping') return
     if (state.combo > 0) playSound('pop', { playbackRate: Math.min(1 + (state.combo - 1) * 0.08, 1.32) })
     if (state.detonatesSpecial) playSound('explode')
-    if (state.combo > 1) showComboPopup(state.combo)
+    if (state.combo > 3) showComboPopup(state.combo)
     showScorePopup(state.gained, state.poppingCells)
     if ([...state.poppingCells].some(key => {
       const [r, c] = key.split(',').map(Number)
@@ -678,6 +613,7 @@ export default function SweetGridGame() {
                     {/* Overlay jika ada permen spesial */}
                     {specialOverlay}
                   </button>
+                  {isPopping && <CandyExplosion colors={candyData.special === 'color-bomb' ? SHARD_COLORS : [pastel.shardColor]} />}
                   </div>
                 )
               })

@@ -432,37 +432,57 @@ body {
   100% { transform: translate(-50%, -120%) scale(1); opacity: 0; }
 }
 
+/* Spring-like overshoot, extruded lettering, then a short floating fade. */
 .combo-popup {
   position: absolute;
+  z-index: 5;
   left: 50%;
-  top: 38%;
-  transform: translate(-50%, -50%);
-  font-size: 22px;
-  font-weight: 800;
-  color: #ffffff;
-  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.45), 0 0 16px rgba(255, 209, 102, 0.65);
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-  animation: comboPopIn 0.7s cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
+  top: 50%;
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 10px;
   pointer-events: none;
+  white-space: nowrap;
+  transform: translate(-50%, -50%);
+  animation: comboCelebration 950ms both;
+  will-change: transform, opacity;
 }
-
-@keyframes comboPopIn {
-  0% { transform: translate(-50%, -50%) scale(0.4) rotate(-4deg); opacity: 0; }
-  25% { transform: translate(-50%, -50%) scale(1.15) rotate(2deg); opacity: 1; }
-  40% { transform: translate(-50%, -50%) scale(1) rotate(0deg); opacity: 1; }
-  100% { transform: translate(-50%, -58%) scale(1) rotate(0deg); opacity: 0; }
+.combo-popup strong {
+  font-size: clamp(36px, 12vw, 64px);
+  font-weight: 1000;
+  font-style: italic;
+  line-height: 1.1;
+  letter-spacing: -0.04em;
+  color: #ffe883;
+  -webkit-text-stroke: 1.5px #9b3b15;
+  text-shadow: 0 2px 0 #e89126, 0 4px 0 #c56a21, 0 6px 0 #98391f,
+    0 8px 0 #652639, 0 12px 14px #140d2ca6, 0 0 24px #ffc65399;
 }
-
-/* Animasi mendarat permen setelah jatuh */
-.candy-land {
-  animation: candyLand 0.18s ease-out;
+.combo-epic strong {
+  color: #fff0ff;
+  -webkit-text-stroke-color: #8524a0;
+  text-shadow: 0 2px 0 #ef85e7, 0 4px 0 #bd46bc, 0 6px 0 #903498,
+    0 8px 0 #592c7b, 0 12px 14px #140d2ca6, 0 0 28px #f987ffb3;
 }
-
-@keyframes candyLand {
-  0% { transform: scaleY(0.82) scaleX(1.1); }
-  55% { transform: scaleY(1.06) scaleX(0.97); }
-  100% { transform: scaleY(1) scaleX(1); }
+.combo-popup small {
+  padding: 5px 12px;
+  border: 1px solid #ffffff80;
+  border-radius: 999px;
+  background: #35234ae6;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.15em;
+  box-shadow: 0 3px 0 #140d2c66;
+}
+@keyframes comboCelebration {
+  0% { transform: translate(-50%, -35%) scale(.25) rotate(-12deg); opacity: 0; }
+  28% { transform: translate(-50%, -50%) scale(1.24) rotate(4deg); opacity: 1; animation-timing-function: ease-out; }
+  44% { transform: translate(-50%, -50%) scale(.93) rotate(-3deg); opacity: 1; }
+  58% { transform: translate(-50%, -50%) scale(1.07) rotate(1deg); opacity: 1; }
+  72% { transform: translate(-50%, -50%) scale(1) rotate(-2deg); opacity: 1; }
+  100% { transform: translate(-50%, -85%) scale(1.12) rotate(-2deg); opacity: 0; }
 }
 
 /* Sweetgame stage 1: recognizable candy silhouettes and level feedback. */
@@ -536,3 +556,50 @@ button:disabled { cursor: wait; opacity: .55; }
 .candy-motion { min-width: 0; min-height: 0; }
 .candy-motion:has([aria-selected="true"]), .candy-motion:focus-within { z-index: 20; }
 .board[aria-busy="true"] .sweet-piece { pointer-events: none; }
+
+/* Bursts belong to the original cells until the animation barrier releases them. */
+.board { isolation: isolate; }
+.candy-motion:has([data-explosion]) { z-index: 25; }
+.candy-explosion { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+.burst-particle, .burst-ring { position: absolute; top: 50%; left: 50%; pointer-events: none; }
+.burst-particle {
+  width: var(--size);
+  height: var(--size);
+  background: var(--burst-color);
+  border-radius: 3px;
+  animation: candyParticleExplosion 420ms cubic-bezier(.16,.65,.35,1) var(--delay) both;
+  will-change: transform, opacity;
+}
+.burst-shard { border: 1px solid #ffffffb3; }
+.burst-spark {
+  background: #fff6c4;
+  border-radius: 50%;
+  box-shadow: 0 0 6px #fff9;
+}
+.burst-ring {
+  width: 75%; height: 75%;
+  border: 2px solid var(--burst-color);
+  border-radius: 50%;
+  animation: candyBurstRing 320ms ease-out both;
+}
+@keyframes candyParticleExplosion {
+  0% { transform: translate(-50%, -50%) scale(.4) rotate(0deg); opacity: 0; }
+  12% { opacity: 1; }
+  62% {
+    transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(1) rotate(var(--spin));
+    opacity: 1;
+  }
+  100% {
+    transform: translate(calc(-50% + var(--dx) * 1.15), calc(-50% + var(--dy) + 20px)) scale(.15) rotate(calc(var(--spin) * 1.4));
+    opacity: 0;
+  }
+}
+@keyframes candyBurstRing {
+  from { transform: translate(-50%, -50%) scale(.35); opacity: .9; }
+  to { transform: translate(-50%, -50%) scale(2.1); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .candy-explosion { display: none; }
+  .combo-popup { animation: comboFade 180ms both; animation-duration: 180ms !important; }
+  @keyframes comboFade { from { opacity: 1; } to { opacity: 0; } }
+}
